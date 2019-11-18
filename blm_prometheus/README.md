@@ -110,7 +110,7 @@ Query OK, 3029 row(s) in set (0.060828s)
 
 ## Limitations
 
-The TDengine limits the length of super table name, so if the name of prometheus exceeds 60 byte, it will be processed by MD5 and use the digested name. and the length of label name is limited within 50 byte.  
+The TDengine limits the length of super table name, so if the name of prometheus exceeds 60 byte, it will be truncated to first 60 bytes. And the length of label name is limited within 50 byte.  
 
 
 [TDengine]:https://www.github.com/Taosdata/TDengine
