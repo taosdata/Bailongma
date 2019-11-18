@@ -207,7 +207,8 @@ func ProcessReq(req prompb.WriteRequest) error{
 		if hasName {
 			stbname := string(metricName);
 			if len(stbname)>=60 {
-				stbname = "md5_"+md5V2(stbname)
+				//stbname = "md5_"+md5V2(stbname)
+				stbname = string([]byte(stbname)[:60])
 			}
 			_,ok := IsSTableCreated.Load(stbname)
 			if !ok {
