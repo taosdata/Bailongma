@@ -12,6 +12,16 @@ To use it:
 go build
 ./blm_prometheus
 ```
+During the go build process, there maybe some errors arised because of lacking some needed packages. You can use `go get` the package to solve it
+```
+go get github.com/gogo/protobuf/proto
+go get github.com/golang/snappy
+go get github.com/prometheus/common/model
+go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
+go get github.com/prometheus/prometheus/prompb
+
+```
+
 
 ...and then add the following to your `prometheus.yml`:
 
