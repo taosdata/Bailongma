@@ -1,8 +1,8 @@
-## TDengine Remote Write Adapter 
+## Prometheus Remote Write Adapter for TDengine 
 
 This is an adapter to support Prometheus remote write into TDengine.
 
-## prerequisite
+## Prerequisite
 
 before running the software, you need to install the `golang-1.10` or later version in your environment and install [TDengine][] so the program can use the lib of TDengine.
 
@@ -10,7 +10,6 @@ To use it:
 
 ```
 go build
-./blm_prometheus
 ```
 During the go build process, there maybe some errors arised because of lacking some needed packages. You can use `go get` the package to solve it
 ```
@@ -21,19 +20,14 @@ go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
 go get github.com/prometheus/prometheus/prompb
 
 ```
+After successful build, there will be a blm_prometheus in the same directory. 
 
+## Running in background
 
-...and then add the following to your `prometheus.yml`:
-
-```yaml
-remote_write:
-  - url: "http://localhost:1234/receive"
-```
-
-Then start Prometheus:
+Using following command to run the program in background
 
 ```
- prometheus
+nohup ./blm_prometheus --host 112.102.3.69:0 --batch-size 80 --http-workers 2 --sql-workers 2 --dbname prometheus --port 1234 > /dev/null 2>&1 &
 ```
 There are several options can be set:
 
@@ -61,20 +55,26 @@ set the password of dbuser. default is "taosdata"
 
 --port
 set the port that prometheus configuration remote_write. as showed above, in the prometheus.yaml
-```
-
-
-## Running in background
-
-Using following command to run the program in background
 
 ```
-nohup ./blm_prometheus --host 112.102.3.69:0 --batch-size 80 --http-workers 2 --sql-workers 2 --dbname prometheus --port 1234 > /dev/null 2>&1 &
+
+## Start prometheus
+
+Add the following to your prometheus's configuration `prometheus.yml` :
+
+```yaml
+remote_write:
+  - url: "http://localhost:1234/receive"
 ```
 
+Then start Prometheus:
+
+```
+ prometheus
+```
 Then you can check the TDengine if there is super table and tables.
 
-## Check the result
+## Check the TDengine tables and datas
 
 Use the taos client shell to query the result.
 ```
