@@ -69,7 +69,7 @@ set the port that prometheus configuration remote_write. as showed above, in the
 Using following command to run the program in background
 
 ```
-nohup ./blm_prometheus > /dev/null 2>&1 &
+nohup ./blm_prometheus --host 112.102.3.69:0 --batch-size 80 --http-workers 2 --sql-workers 2 --dbname prometheus --port 1234 > /dev/null 2>&1 &
 ```
 
 Then you can check the TDengine if there is super table and tables.
