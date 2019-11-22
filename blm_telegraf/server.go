@@ -16,10 +16,7 @@ import (
 	"encoding/json"
 //	"sort"
 	"container/list"
-	//"sort"
-	//"github.com/gogo/protobuf/proto"
-	//"github.com/golang/snappy"
-	//"github.com/prometheus/common/model"
+
 	_ "github.com/taosdata/TDengine/src/connector/go/src/taosSql"
 
 	"github.com/prometheus/prometheus/prompb"
@@ -31,8 +28,23 @@ type metric struct {
 	Tags   map[string] string 	
 	TimeStamp  int64
 }
+
+type tdschema struct {
+	StbName string
+	Tags    *list.List
+	Values  *list.List
+	MultiMetric  bool
+}
+
+type tdpoint struct {
+	StbName string
+	Tags    *list.List
+	Value   int64
+}
+
 type Metrics struct{
 	Metrics []metric
+	HostIP   string
 }
 var (
 	daemonUrl      string
@@ -45,6 +57,10 @@ var (
 	dbpassword string
 	rwport         string
 )
+type nametag struct {
+	tagmap map[string]string 
+	taglist *list.List
+}
  
 // Global vars
 var (
@@ -57,6 +73,10 @@ var (
 	reportHostname string
 	taosDriverName string = "taosSql"
 	IsSTableCreated      sync.Map
+	IsTableCreated      sync.Map
+	taglist        *list.List
+	//tagmap         map[string]string
+	nametagmap     map[string]nametag
 )
 var scratchBufPool = &sync.Pool{
 	New: func() interface{} {
@@ -71,13 +91,17 @@ func init() {
 	flag.IntVar(&batchSize, "batch-size", 10, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 10, "Number of parallel http requests handler .")
 	flag.IntVar(&sqlworkers, "sql-workers", 10, "Number of parallel sql handler.")
-	flag.StringVar(&dbname, "dbname", "prometheus", "Database name where to store metrics")
+	flag.StringVar(&dbname, "dbname", "telegraf", "Database name where to store metrics")
 	flag.StringVar(&dbuser, "dbuser", "root", "User for host to send result metrics")
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
 	flag.StringVar(&rwport, "port", "10202", "remote write port")
 
 
 	flag.Parse()
+
+	//taglist  = list.New();
+	//tagmap   = make(map[string]string)
+	nametagmap = make(map[string]nametag)
 
 }
 
@@ -120,6 +144,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		req.HostIP = addr[0]
 
 		nodeChans[idx%httpworkers] <- req
 	})
@@ -180,10 +205,28 @@ func TAOSSerializeTimeseries(ts prompb.TimeSeries, stbn string,tbname string) (s
 
 func TAOShashID(ba []byte) int {
 	var sum int = 0
+	
 	for i := 0; i < len(ba); i++ {
 		sum += int(ba[i] - '0')
 	}
+
 	return sum
+}
+
+func TAOSstrCmp(a string , b string) bool {
+	//return if a locates before b in a dictrionary.
+	for i:=0; i<len(a) && i<len(b); i++ {
+		if int(a[i]-'0') > int(b[i]-'0') {
+			return false
+		}else if int(a[i]-'0') < int(b[i]-'0') {
+			return true
+		}
+	}
+	if len(a)>len(b) {
+		return false
+	}else {
+		return true
+	}
 }
 
 func NodeProcess(workerid int) error {
@@ -198,15 +241,53 @@ func NodeProcess(workerid int) error {
 }
 
 func OrderInsert(ts int64,l *list.List) {
-	
+	e:= l.Front()
+	if e == nil {
+		l.PushFront(ts)
+		return 
+	}
+
+	for e = l.Front(); e != nil; e = e.Next()  {
+		
+		if e.Value.(int64) < ts{
+			continue
+		}else {
+			l.InsertBefore(ts,e)
+			return
+		}
+	}
 }
+
+func OrderInsertS(s string,l *list.List) {
+	e:= l.Front()
+	if e == nil {
+		l.PushFront(s)
+		return 
+	}
+
+	for e = l.Front(); e != nil; e = e.Next()  {
+		str:= e.Value.(string)
+
+		if TAOSstrCmp(str,s) {
+			continue
+		}else {
+			l.InsertBefore(s,e)
+			return
+		}
+	}
+}
+
+func TAOSSerializeMetrics(m []metric) (sqlcmd []byte, idx int, err error){
+	return nil,0,nil
+}
+
 
 func ProcessReq(req Metrics) error{
 
-	//namemap := make(map[string]map[])
-	
 	tsmap := make(map[int64]map[string][]metric)
 	tslist := list.New()
+	addr := req.HostIP
+
 	var lastTs int64 = 0
 	 for i:=0; i<len(req.Metrics); i++{
 		m := req.Metrics[i]
@@ -222,60 +303,192 @@ func ProcessReq(req Metrics) error{
 		}
 		lastTs = m.TimeStamp
 	 }
-
-	 //fmt.Println(len(tsmap)) 
-	 for k,nmp := range tsmap {
-		fmt.Println(k)
-		for kk,vv := range nmp {
-			fmt.Println(kk)
-			fmt.Println(vv)	
-		}
-	 }
 	 
-	/*for _, ts := range req.Timeseries {
-		//TAOSSerializeTimeseries(ts, db)
-		m := make(model.Metric, len(ts.Labels))
-		var tbn string 
-		for _, l := range ts.Labels {
-			m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-			tbn = tbn+ string(l.Value)
-		}
-		metricName, hasName := m["__name__"]
-		if hasName {
-			stbname := string(metricName);
-			if len(stbname)>=60 {
-				//stbname = "md5_"+md5V2(stbname)
-				stbname = string([]byte(stbname)[:60])
-			}
-			_,ok := IsSTableCreated.Load(stbname)
-			if !ok {
-				TAOSCreateStable(ts,stbname,dbname)
-			}else {
-				idx := TAOShashID([]byte(tbn))
-				tbn = "md5_"+md5V2(tbn)
-				sqlCmd,_:= TAOSSerializeTimeseries(ts,stbname,tbn)
+	 for e := tslist.Front();e!=nil; e = e.Next() {
+		 
+		 namemap,ok := tsmap[e.Value.(int64)]
+		 if ok {
+			 for k,v := range namemap {
+
+				TAOSCreateStable(v,dbname,addr)
+				sqlCmd,idx,_:= TAOSSerializeMetrics(v)
+
 				if sqlCmd != nil{
 					batchChans[idx%sqlworkers]<- string(sqlCmd)
-
 				}else {
-					info := fmt.Sprintf("serilize faild, stbname %s",stbname)
-					panic(info)
+					continue
+					fmt.Println(k)
+					//info := fmt.Sprintf("serilize faild, stbname %s",k)
+					//panic(info)
 				}
-
 			}
-		}else {
-			info := fmt.Sprintf("no name metric")
-			panic(info)
-		}
-	}*/
+		 }else {
+			 info := fmt.Sprintf("ProcessReq: cannot retrieve map")
+			 panic(info)
+		 }
+
+	 }
+
 	return nil
 }
 
-func TAOSCreateStable(ts prompb.TimeSeries, tname string,dbn string) error {
+func CheckStable(ts []metric,hostip string) (sql string,err error){
+
+	nt,ok := nametagmap[ts[0].Name]
+
+	if !ok {
+		nt.taglist = list.New()
+		nt.tagmap = make(map[string]string)
+		nametagmap[ts[0].Name] = nt
+		tagmap :=nt.tagmap
+		taglist := nt.taglist
+		for i:=0;i<len(ts);i++{
+			for k,_ := range ts[i].Tags {
+				_,ok := tagmap[k]
+				if !ok {
+					taglist.PushBack(k)
+					tagmap[k] = "y"
+				}			
+			}
+		}
+		var sqlcmd string
+		sqlcmd = "create table if not exists "+ts[0].Name+" (ts timestamp, value double) tags("
+		for e:= taglist.Front(); e!=nil; e = e.Next() {
+			sqlcmd = sqlcmd + e.Value.(string) + " binary(40),"
+		}
+		sqlcmd = sqlcmd +"srcip binary(20), field binary(40))\n"
+		fmt.Print(sqlcmd)
+		return sqlcmd, nil
+	}
+
+	tagmap :=nt.tagmap
+	taglist := nt.taglist
+
+	var sqlcmd string 
+	for i:=0;i<len(ts);i++{
+		
+		for k,_ := range ts[i].Tags {
+			_,ok := tagmap[k]
+			if !ok {
+				sqlcmd =sqlcmd+ "alter table "+ts[0].Name+ " add tag " + k + " binary(40)\n" 
+				taglist.PushBack(k)
+				tagmap[k] = "y"
+
+			}			
+		}
+
+	}
+	fmt.Print(sqlcmd)
+	return sqlcmd,nil
+}
+
+func TAOSCreateStable(ts []metric,dbn string, hostip string) error {
+	sqlcmd,err := CheckStable(ts,hostip)
+	if len(sqlcmd) != 0{
+		execSql(dbn,sqlcmd)
+	}
+	return err
 	
+
+//	var schema tdschema
+//	var vmp = make(map[string]bool)
+//var tbn string
+/*
+	if len(ts)>0 {
+		schema.StbName = ts[0].Name
+		schema.Tags = list.New()
+		schema.Values = list.New()
+		
+		for k,_ := range ts[0].Tags {
+			OrderInsertS(k,schema.Tags)			
+		}
+		schema.MultiMetric = false;
+		
+		for kk,_ := range ts[0].Fields {
+			vmp[kk] = true
+			OrderInsertS(kk,schema.Values)
+		}		
+	}
+*/	
+	
+
+		//fmt.Print(ts[0].Name)
+		//fmt.Print(" tags: ")
+		//for e := taglist.Front(); e != nil; e = e.Next() {
+		//	fmt.Print(e.Value.(string))
+	//		fmt.Print(", ")
+	//	}
+/*
+
+		tbn = ts[i].Name
+		
+		for e := taglist.Front(); e != nil; e = e.Next() {
+			//tagv,_ := ts[i].Tags[e.Value.(string)]
+			tbn = tbn+":"+tagv
+		}
+
+		for k,_ := range ts[i].Fields {
+			s := tbn +":"+ k //+ "_"+hostip
+			stbname := ts[i].Name+":"+k
+			_,ok := stbmap[s]
+			if ok {
+				info := fmt.Sprint("same stable name : %s",s)
+				panic(info)
+			}
+			stbmap[s] = true
+				
+			fmt.Print(stbname)
+			fmt.Print("-->")
+			fmt.Print(s)
+			fmt.Print("\n")
+		}
+
+		_,ok := tagmap()
+		stbn := ts[i].Name + "_"+strconv.Itoa(len(ts[i].Tags))+"_"+strconv.Itoa(len(ts[i].Fields))
+		fmt.Println(stbn)
+		if ts[i].Name == "mem" ||ts[i].Name == "system"  {
+			fmt.Println(ts[i].Tags)
+			fmt.Println(ts[i].Fields)
+		}	
+
+		for k,_ := range ts[i].Fields {
+			_,ok:=vmp[k]
+			if !ok {
+				vmp[k] = true
+				OrderInsertS(k,schema.Values)
+				schema.MultiMetric = true
+			}else {
+				continue
+			}
+			
+		}
+		if schema.MultiMetric == false {
+			break;
+		}
+
+	}
+	
+	fmt.Print(" name: ")
+	fmt.Println(schema.StbName)
+	for e := schema.Values.Front(); e!=nil; e = e.Next() {
+		fmt.Print(e.Value)
+		fmt.Print(", ")
+	}
+	fmt.Print("\n")
+	fmt.Println("********")
+	for e := schema.Tags.Front(); e!=nil; e = e.Next() {
+		fmt.Print(e.Value)
+		fmt.Print(", ")
+	}
+
+*/	
+
+
+/*
 	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbn)
 	if err != nil {
 		log.Fatalf("TAOSCreateStable Open database error: %s\n", err)
+		return err
 	}
 	defer db.Close()	
 	// assemble the create super table command line
@@ -305,7 +518,7 @@ func TAOSCreateStable(ts prompb.TimeSeries, tname string,dbn string) error {
 	
 	buf = buf[:0]
 	scratchBufPool.Put(buf)
-	return nil
+	*/
 }
 
 func createDatabase(dbname string) {
@@ -321,6 +534,18 @@ func createDatabase(dbname string) {
 	checkErr(err)
 	return
 }
+
+func execSql(dbname string,sqlcmd string) {
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+	if err != nil {
+		log.Fatalf("Open database error: %s\n", err)
+	}
+	defer db.Close()
+	_, err = db.Exec(sqlcmd)
+	checkErr(err)
+	return
+}
+
 
 func checkErr(err error) {
 	if err != nil {
