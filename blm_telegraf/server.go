@@ -14,7 +14,6 @@ import (
 	"crypto/md5"
 	"strconv"
 	"encoding/json"
-//	"sort"
 	"container/list"
 
 	_ "github.com/taosdata/TDengine/src/connector/go/src/taosSql"
@@ -278,6 +277,8 @@ func OrderInsertS(s string,l *list.List) {
 }
 
 func TAOSSerializeMetrics(m []metric) (sqlcmd []byte, idx int, err error){
+
+
 	return nil,0,nil
 }
 
@@ -332,45 +333,114 @@ func ProcessReq(req Metrics) error{
 	return nil
 }
 
-func CheckStable(ts []metric,hostip string) (sql string,err error){
+func Checktable(m metric, dbn string, hostip string , taglist *list.List) error{
+	var tbn string
 
-	nt,ok := nametagmap[ts[0].Name]
+	for _,v := range m.Tags {
+		tbn = tbn+v
+	}
 
+	for k,v := range m.Fields {
+		s := tbn + hostip + k
+		//fmt.Print(s)
+		s = "MD5_"+md5V2(s)
+		_,ok := IsTableCreated.Load(s)
+		if !ok {
+			var sqlcmd string 
+			switch v.(type) {
+				case string: 
+					sqlcmd = "create table if not exists " + s + " using " + m.Name+ "_str tags("
+				default:
+					sqlcmd = "create table if not exists " + s + " using " + m.Name+ " tags("
+			}
+						
+			for e:= taglist.Front(); e!=nil; e = e.Next() {
+				tagvalue, has := m.Tags[e.Value.(string)]
+				if len(tagvalue)>=60 {
+					tagvalue = tagvalue[:59]
+				}
+				if has {
+					sqlcmd = sqlcmd + "\""+tagvalue + "\","
+				}else {
+					sqlcmd = sqlcmd + "null,"
+				}
+			}
+			sqlcmd = sqlcmd + "\""+hostip+ "\","+ "\""+k +"\")\n"
+			execSql(dbn,sqlcmd)
+			IsTableCreated.Store(s,true) 
+		}else {
+			sqlcmd := "insert into "+ s + " values(" 
+			
+			tls :=strconv.FormatInt(m.TimeStamp,10)
+			switch v.(type) {
+				case string:
+					sqlcmd = sqlcmd + tls+",\""+v.(string)+"\")\n"
+				case int64:
+        			sqlcmd = sqlcmd + tls+","+strconv.FormatInt(v.(int64),10)+")\n"
+				case float64:
+					sqlcmd = sqlcmd + tls+","+strconv.FormatFloat(v.(float64),'E',-1,64)+")\n"
+    			default:
+        			panic("Checktable error value type")
+			}
+			
+			execSql(dbn,sqlcmd)
+		}
+		
+	}
+	return nil
+}
+
+func CheckStable(ts []metric,dbn string,hostip string) error{
+
+	schema,ok := IsSTableCreated.Load(ts[0].Name)
+	
 	if !ok {
+		var nt nametag
 		nt.taglist = list.New()
 		nt.tagmap = make(map[string]string)
-		nametagmap[ts[0].Name] = nt
+		IsSTableCreated.Store(ts[0].Name, nt)
 		tagmap :=nt.tagmap
 		taglist := nt.taglist
+
 		for i:=0;i<len(ts);i++{
+
 			for k,_ := range ts[i].Tags {
 				_,ok := tagmap[k]
 				if !ok {
 					taglist.PushBack(k)
-					tagmap[k] = "y"
+					tagmap[k] = "y"					
 				}			
 			}
 		}
 		var sqlcmd string
 		sqlcmd = "create table if not exists "+ts[0].Name+" (ts timestamp, value double) tags("
+		sqlcmd1 := "create table if not exists "+ts[0].Name+"_str (ts timestamp, value binary(256)) tags("
 		for e:= taglist.Front(); e!=nil; e = e.Next() {
-			sqlcmd = sqlcmd + e.Value.(string) + " binary(40),"
+			sqlcmd = sqlcmd + e.Value.(string) + " binary(50),"
+			sqlcmd1 = sqlcmd1 + e.Value.(string) + " binary(50),"
 		}
 		sqlcmd = sqlcmd +"srcip binary(20), field binary(40))\n"
-		fmt.Print(sqlcmd)
-		return sqlcmd, nil
+		sqlcmd1 = sqlcmd1 +"srcip binary(20), field binary(40))\n"
+		execSql(dbn,sqlcmd)
+		execSql(dbn,sqlcmd1)
+		for i:=0;i<len(ts);i++{
+			Checktable(ts[i],dbn,hostip,taglist)
+		}		
+		
+		return  nil
 	}
-
+	nt := schema.(nametag)
 	tagmap :=nt.tagmap
 	taglist := nt.taglist
 
-	var sqlcmd string 
+	var sqlcmd,sqlcmd1 string 
 	for i:=0;i<len(ts);i++{
 		
 		for k,_ := range ts[i].Tags {
 			_,ok := tagmap[k]
 			if !ok {
 				sqlcmd =sqlcmd+ "alter table "+ts[0].Name+ " add tag " + k + " binary(40)\n" 
+				sqlcmd1 =sqlcmd1+ "alter table "+ts[0].Name+ "_str add tag " + k + " binary(40)\n" 
 				taglist.PushBack(k)
 				tagmap[k] = "y"
 
@@ -378,147 +448,19 @@ func CheckStable(ts []metric,hostip string) (sql string,err error){
 		}
 
 	}
-	fmt.Print(sqlcmd)
-	return sqlcmd,nil
+	execSql(dbn,sqlcmd)
+	execSql(dbn,sqlcmd1)
+
+	for i:=0;i<len(ts);i++{
+		Checktable(ts[i],dbn,hostip,taglist)
+	}		
+	return nil
 }
 
 func TAOSCreateStable(ts []metric,dbn string, hostip string) error {
-	sqlcmd,err := CheckStable(ts,hostip)
-	if len(sqlcmd) != 0{
-		execSql(dbn,sqlcmd)
-	}
+	err := CheckStable(ts,dbn,hostip)
 	return err
-	
 
-//	var schema tdschema
-//	var vmp = make(map[string]bool)
-//var tbn string
-/*
-	if len(ts)>0 {
-		schema.StbName = ts[0].Name
-		schema.Tags = list.New()
-		schema.Values = list.New()
-		
-		for k,_ := range ts[0].Tags {
-			OrderInsertS(k,schema.Tags)			
-		}
-		schema.MultiMetric = false;
-		
-		for kk,_ := range ts[0].Fields {
-			vmp[kk] = true
-			OrderInsertS(kk,schema.Values)
-		}		
-	}
-*/	
-	
-
-		//fmt.Print(ts[0].Name)
-		//fmt.Print(" tags: ")
-		//for e := taglist.Front(); e != nil; e = e.Next() {
-		//	fmt.Print(e.Value.(string))
-	//		fmt.Print(", ")
-	//	}
-/*
-
-		tbn = ts[i].Name
-		
-		for e := taglist.Front(); e != nil; e = e.Next() {
-			//tagv,_ := ts[i].Tags[e.Value.(string)]
-			tbn = tbn+":"+tagv
-		}
-
-		for k,_ := range ts[i].Fields {
-			s := tbn +":"+ k //+ "_"+hostip
-			stbname := ts[i].Name+":"+k
-			_,ok := stbmap[s]
-			if ok {
-				info := fmt.Sprint("same stable name : %s",s)
-				panic(info)
-			}
-			stbmap[s] = true
-				
-			fmt.Print(stbname)
-			fmt.Print("-->")
-			fmt.Print(s)
-			fmt.Print("\n")
-		}
-
-		_,ok := tagmap()
-		stbn := ts[i].Name + "_"+strconv.Itoa(len(ts[i].Tags))+"_"+strconv.Itoa(len(ts[i].Fields))
-		fmt.Println(stbn)
-		if ts[i].Name == "mem" ||ts[i].Name == "system"  {
-			fmt.Println(ts[i].Tags)
-			fmt.Println(ts[i].Fields)
-		}	
-
-		for k,_ := range ts[i].Fields {
-			_,ok:=vmp[k]
-			if !ok {
-				vmp[k] = true
-				OrderInsertS(k,schema.Values)
-				schema.MultiMetric = true
-			}else {
-				continue
-			}
-			
-		}
-		if schema.MultiMetric == false {
-			break;
-		}
-
-	}
-	
-	fmt.Print(" name: ")
-	fmt.Println(schema.StbName)
-	for e := schema.Values.Front(); e!=nil; e = e.Next() {
-		fmt.Print(e.Value)
-		fmt.Print(", ")
-	}
-	fmt.Print("\n")
-	fmt.Println("********")
-	for e := schema.Tags.Front(); e!=nil; e = e.Next() {
-		fmt.Print(e.Value)
-		fmt.Print(", ")
-	}
-
-*/	
-
-
-/*
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbn)
-	if err != nil {
-		log.Fatalf("TAOSCreateStable Open database error: %s\n", err)
-		return err
-	}
-	defer db.Close()	
-	// assemble the create super table command line
-	buf := scratchBufPool.Get().([]byte)
-	s := fmt.Sprintf("create table if not exists %s (ts timestamp, value1 double) tags(", tname)
-	buf = append(buf, s...)
-	
-	var start int = 0
-	for _, l := range ts.Labels {
-		if l.Name == "__name__"{
-			continue
-		}
-		if start == 0{
-			buf = append(buf, "t_"+l.Name+" binary(50)"...)
-			start  = 1
-		}else {
-			buf = append(buf, ", t_"+l.Name+" binary(50)"...)
-		}
-	}
-	buf = append(buf,");\n"...)
-	_, err = db.Exec(string(buf))
-	if err != nil {
-		log.Fatalf("Error writing: %s\n", string(buf))//err.Error())
-	}
-	IsSTableCreated.Store(tname,true)
-	//fmt.Println(string(buf))
-	
-	buf = buf[:0]
-	scratchBufPool.Put(buf)
-	*/
 }
 
 func createDatabase(dbname string) {
@@ -536,6 +478,9 @@ func createDatabase(dbname string) {
 }
 
 func execSql(dbname string,sqlcmd string) {
+	if len(sqlcmd)<1{
+		return
+	}
 	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
 	if err != nil {
 		log.Fatalf("Open database error: %s\n", err)
@@ -543,6 +488,7 @@ func execSql(dbname string,sqlcmd string) {
 	defer db.Close()
 	_, err = db.Exec(sqlcmd)
 	checkErr(err)
+	//fmt.Print(sqlcmd)
 	return
 }
 
