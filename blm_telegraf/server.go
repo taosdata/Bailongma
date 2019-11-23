@@ -18,7 +18,6 @@ import (
 
 	_ "github.com/taosdata/TDengine/src/connector/go/src/taosSql"
 
-	"github.com/prometheus/prometheus/prompb"
 )
 
 type metric struct {
@@ -74,7 +73,6 @@ var (
 	IsSTableCreated      sync.Map
 	IsTableCreated      sync.Map
 	taglist        *list.List
-	//tagmap         map[string]string
 	nametagmap     map[string]nametag
 )
 var scratchBufPool = &sync.Pool{
@@ -98,8 +96,6 @@ func init() {
 
 	flag.Parse()
 
-	//taglist  = list.New();
-	//tagmap   = make(map[string]string)
 	nametagmap = make(map[string]nametag)
 
 }
@@ -151,55 +147,6 @@ func main() {
 	log.Fatal(http.ListenAndServe(":"+rwport, nil))
 
 
-}
-
-func TAOSSerializeTimeseries(ts prompb.TimeSeries, stbn string,tbname string) (sqlcmd []byte, err error) {
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
-	if err != nil {
-		log.Fatalf("TAOSSerializeTimeseries Open database error: %s\n", err)
-	}
-	defer db.Close()	
-	// assemble the create super table command line
-	buf := scratchBufPool.Get().([]byte)
-	s := fmt.Sprintf(" %s using %s tags(", tbname, stbn)
-	buf = append(buf, s...)	
-	var head int =0
-	
-	for _,l := range ts.Labels{
-		if string(l.Name) == "__name__" {
-			continue
-		}
-		if head ==0{
-			buf = append(buf, "\""+string(l.Value)+"\""...)
-			head =1
-		}else {
-			buf = append(buf,",\""+string(l.Value)+"\""...)
-		}
-	}
-	buf = append(buf,") values("...)
-	head = 0
-	for _, s := range ts.Samples {
-		if head ==0{
-			var t int64
-			var vl float64
-			var v string 
-			vl = s.GetValue()
-			t = s.GetTimestamp()
-			flt := strconv.FormatFloat(vl,'E',-1,64)
-			if flt == "NaN" { 
-				v = fmt.Sprintf("%d,null)", t)
-			}else {
-				v = fmt.Sprintf("%d,%f)", t, vl)
-			}
-	
-			buf = append(buf,v...)
-			head = 1
-		}else {
-			einfo := fmt.Sprintf("%d values, more than one value, have to redesign", len(ts.Samples))
-			panic(einfo)
-		}
-	}
-	return buf, nil	
 }
 
 func TAOShashID(ba []byte) int {
@@ -276,13 +223,6 @@ func OrderInsertS(s string,l *list.List) {
 	}
 }
 
-func TAOSSerializeMetrics(m []metric) (sqlcmd []byte, idx int, err error){
-
-
-	return nil,0,nil
-}
-
-
 func ProcessReq(req Metrics) error{
 
 	tsmap := make(map[int64]map[string][]metric)
@@ -309,19 +249,9 @@ func ProcessReq(req Metrics) error{
 		 
 		 namemap,ok := tsmap[e.Value.(int64)]
 		 if ok {
-			 for k,v := range namemap {
+			 for _,v := range namemap {
 
-				TAOSCreateStable(v,dbname,addr)
-				sqlCmd,idx,_:= TAOSSerializeMetrics(v)
-
-				if sqlCmd != nil{
-					batchChans[idx%sqlworkers]<- string(sqlCmd)
-				}else {
-					continue
-					fmt.Println(k)
-					//info := fmt.Sprintf("serilize faild, stbname %s",k)
-					//panic(info)
-				}
+				ProcessData(v,dbname,addr)
 			}
 		 }else {
 			 info := fmt.Sprintf("ProcessReq: cannot retrieve map")
@@ -333,7 +263,7 @@ func ProcessReq(req Metrics) error{
 	return nil
 }
 
-func Checktable(m metric, dbn string, hostip string , taglist *list.List) error{
+func SerilizeTDengine(m metric, dbn string, hostip string , taglist *list.List) error{
 	var tbn string
 
 	for _,v := range m.Tags {
@@ -369,28 +299,29 @@ func Checktable(m metric, dbn string, hostip string , taglist *list.List) error{
 			execSql(dbn,sqlcmd)
 			IsTableCreated.Store(s,true) 
 		}else {
-			sqlcmd := "insert into "+ s + " values(" 
+			idx := TAOShashID([]byte(s))
+			sqlcmd :=  " "+s + " values(" 
 			
 			tls :=strconv.FormatInt(m.TimeStamp,10)
 			switch v.(type) {
 				case string:
-					sqlcmd = sqlcmd + tls+",\""+v.(string)+"\")\n"
+					sqlcmd = sqlcmd + tls+",\""+v.(string)+"\")"
 				case int64:
-        			sqlcmd = sqlcmd + tls+","+strconv.FormatInt(v.(int64),10)+")\n"
+        			sqlcmd = sqlcmd + tls+","+strconv.FormatInt(v.(int64),10)+")"
 				case float64:
-					sqlcmd = sqlcmd + tls+","+strconv.FormatFloat(v.(float64),'E',-1,64)+")\n"
+					sqlcmd = sqlcmd + tls+","+strconv.FormatFloat(v.(float64),'E',-1,64)+")"
     			default:
         			panic("Checktable error value type")
 			}
-			
-			execSql(dbn,sqlcmd)
+			batchChans[idx%sqlworkers]<- sqlcmd
+			//execSql(dbn,sqlcmd)
 		}
 		
 	}
 	return nil
 }
 
-func CheckStable(ts []metric,dbn string,hostip string) error{
+func ProcessData(ts []metric,dbn string,hostip string) error{
 
 	schema,ok := IsSTableCreated.Load(ts[0].Name)
 	
@@ -424,7 +355,7 @@ func CheckStable(ts []metric,dbn string,hostip string) error{
 		execSql(dbn,sqlcmd)
 		execSql(dbn,sqlcmd1)
 		for i:=0;i<len(ts);i++{
-			Checktable(ts[i],dbn,hostip,taglist)
+			SerilizeTDengine(ts[i],dbn,hostip,taglist)
 		}		
 		
 		return  nil
@@ -452,15 +383,9 @@ func CheckStable(ts []metric,dbn string,hostip string) error{
 	execSql(dbn,sqlcmd1)
 
 	for i:=0;i<len(ts);i++{
-		Checktable(ts[i],dbn,hostip,taglist)
+		SerilizeTDengine(ts[i],dbn,hostip,taglist)
 	}		
 	return nil
-}
-
-func TAOSCreateStable(ts []metric,dbn string, hostip string) error {
-	err := CheckStable(ts,dbn,hostip)
-	return err
-
 }
 
 func createDatabase(dbname string) {
