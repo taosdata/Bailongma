@@ -1,4 +1,4 @@
-## Prometheus Remote Write Adapter for TDengine 
+# Prometheus Remote Write Adapter for TDengine 
 
 This is an adapter to support Prometheus remote write into TDengine.
 

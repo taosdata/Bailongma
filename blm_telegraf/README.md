@@ -1,6 +1,6 @@
-## TDengine Remote Write Adapter 
+# API for Telegraf
 
-This is an adapter to support Prometheus remote write into TDengine.
+This is an API to support Telegraf writing data into TDengine.
 
 ## prerequisite
 
@@ -10,29 +10,31 @@ To use it:
 
 ```
 go build
-./blm_prometheus
 ```
-
-...and then add the following to your `prometheus.yml`:
-
-```yaml
-remote_write:
-  - url: "http://localhost:1234/receive"
+During the go build process, there maybe some errors arised because of lacking some needed packages. You can use `go get` the package to solve it
 ```
-
-Then start Prometheus:
+go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
 
 ```
- prometheus
+After successful build, there will be a blm_telegraf in the same directory. 
+
+## Running in background
+
+Using following command to run the program in background
+
 ```
+nohup ./blm_telegraf --host 112.102.3.69:0 --batch-size 200 --http-workers 2 --sql-workers 2 --dbname telegraf --port 1234 > /dev/null 2>&1 &
+```
+The API url is `http://ipaddress:port/telegraf`
+
 There are several options can be set:
 
-```sh
+```
 --host 
 set the host of TDengine, IP:port, for example "192.168.0.1:0"
 
 --batch-size 
-set the size of how many records in one SQL cmd line writing into TDengine. There is a limitation that TDengine could only accept SQL line small than 64000 bytes, so usually the batch size should not exceed 200. Default is 10.
+set the size of how many records in one SQL cmd line writing into TDengine. There is a limitation that TDengine could only accept SQL line small than 64000 bytes, so usually the batch size should not exceed 800. Default is 10.
 
 --http-workers
 set the number of workers who process the HTTP request. default is 10
@@ -41,7 +43,7 @@ set the number of workers who process the HTTP request. default is 10
 set the number of workers who process the database request. default is 10 
 
 --dbname
-set the database name in TDengine, if not exists, a database will be created after this dbname. default is "prometheus".
+set the database name in TDengine, if not exists, a database will be created after this dbname. default is "telegraf".
 
 --dbuser
 set the user name that have the right to access the TDengine. default is "root"
@@ -51,20 +53,48 @@ set the password of dbuser. default is "taosdata"
 
 --port
 set the port that prometheus configuration remote_write. as showed above, in the prometheus.yaml
-```
-
-
-## Running in background
-
-Using following command to run the program in background
 
 ```
-nohup ./blm_prometheus > /dev/null 2>&1 &
-```
 
+## Configure the Telegraf
+
+To write into blm_telegraf API, you should configure the telegraf as below
+In the telegraf configuration file, output plugin part:
+
+1. telegraf out put plugin setup:
+Set the url to the blm_telegraf API 
+Set the data format as "json"
+Set the json timstamp units as "1ms"
+```toml
+[[outputs.http]]
+#   ## URL is the address to send metrics to
+url = "http://114.116.124.178:8081/telegraf"
+
+data_format = "json"
+json_timestamp_units = "1ms"
+
+```
+In the Agent part, the hostname should be unique among all the telegraf which report to the TDengine.
+
+```toml
+# Configuration for telegraf agent
+[agent]
+  ## Default data collection interval for all inputs
+  interval = "5s"
+...
+
+  ## Override default hostname, if empty use os.Hostname()
+  hostname = "testhost1"
+
+```
+Then start telegraf:
+
+```sh
+ telegraf --config xxx.conf
+```
 Then you can check the TDengine if there is super table and tables.
 
-## Check the result
+## Check the TDengine tables and datas
 
 Use the taos client shell to query the result.
 ```
@@ -79,28 +109,32 @@ Database changed.
 taos> show stables;
                               name                              |     created_time     |columns| tags  |  tables   |
 ====================================================================================================================
-prometheus_sd_kubernetes_cache_watch_events_sum                 | 19-11-15 17:45:07.594|      2|      3|          1|
-prometheus_sd_kubernetes_cache_watch_events_count               | 19-11-15 17:45:07.596|      2|      3|          1|
-prometheus_sd_kubernetes_cache_watches_total                    | 19-11-15 17:45:07.598|      2|      3|          1|
-prometheus_sd_kubernetes_events_total                           | 19-11-15 17:45:07.600|      2|      5|         15|
-prometheus_target_scrape_pool_reloads_total                     | 19-11-15 17:45:07.672|      2|      3|          1|
-prometheus_sd_received_updates_total                            | 19-11-15 17:45:07.674|      2|      4|          1|
-prometheus_target_scrape_pool_reloads_failed_total              | 19-11-15 17:45:07.730|      2|      3|          1|
-prometheus_sd_updates_total                                     | 19-11-15 17:45:07.732|      2|      4|          1|
-prometheus_target_scrape_pool_sync_total                        | 19-11-15 17:45:07.734|      2|      4|          1|
+system                                                          | 19-11-22 21:48:10.205|      2|      3|         12|
+system_str                                                      | 19-11-22 21:48:10.205|      2|      3|          2|
+cpu                                                             | 19-11-22 21:48:10.225|      2|      4|        200|
+cpu_str                                                         | 19-11-22 21:48:10.226|      2|      4|          0|
+processes                                                       | 19-11-22 21:48:10.230|      2|      3|         16|
+processes_str                                                   | 19-11-22 21:48:10.230|      2|      3|          0|
+disk                                                            | 19-11-22 21:48:10.233|      2|      7|        357|
+disk_str                                                        | 19-11-22 21:48:10.234|      2|      7|          0|
+diskio                                                          | 19-11-22 21:48:10.247|      2|      4|         72|
+diskio_str                                                      | 19-11-22 21:48:10.248|      2|      4|          0|
+swap                                                            | 19-11-22 21:48:10.254|      2|      3|          7|
+swap_str                                                        | 19-11-22 21:48:10.255|      2|      3|          0|
+mem                                                             | 19-11-22 21:48:10.272|      2|      3|         61|
+mem_str                                                         | 19-11-22 21:48:10.272|      2|      3|          0|
+Query OK, 14 row(s) in set (0.000733s)
+
+
+
+taos> select * from mem;
+
 ......
 
-go_memstats_gc_cpu_fraction                                     | 19-11-15 17:45:06.599|      2|      3|          1|
-Query OK, 211 row(s) in set (0.004891s)
-
-
-taos> select * from prometheus_sd_updates_total;
-
-......
-
- 19-11-16 14:24:00.271|              1.000000000|localhost:9090                                    |prometheus                                        |codelab-monitor                                   |scrape                                            |
- 19-11-16 14:24:05.271|              1.000000000|localhost:9090                                    |prometheus                                        |codelab-monitor                                   |scrape                                            |
-Query OK, 3029 row(s) in set (0.060828s)
+ 19-11-23 14:19:11.000|              0.000000000|testhost1                                         |1.202.240.226       |huge_pages_free                         |
+ 19-11-23 14:19:16.000|              0.000000000|testhost1                                         |1.202.240.226       |huge_pages_free                         |
+ 19-11-23 14:19:21.000|              0.000000000|testhost1                                         |1.202.240.226       |huge_pages_free                         |
+ 19-11-23 14:19:26.000|              0.000000000|testhost1                                         |1.202.240.226       |huge_pages_free                         |Query OK, 3029 row(s) in set (0.060828s)
 
 
 ```
@@ -110,7 +144,7 @@ Query OK, 3029 row(s) in set (0.060828s)
 
 ## Limitations
 
-The TDengine limits the length of super table name, so if the name of prometheus metric exceeds 60 byte, it will be truncated to first 60 bytes. And the length of label name is limited within 50 byte.  
+The TDengine limits the length of super table name, so if the name of Telegraf measurement name  exceeds 60 byte, it will be truncated to first 60 bytes. And the length of tags name is limited within 50 byte.  
 
 
 [TDengine]:https://www.github.com/Taosdata/TDengine
