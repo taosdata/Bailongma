@@ -125,12 +125,7 @@ func main() {
 }
 
 func TAOSSerializeTimeseries(ts prompb.TimeSeries, stbn string,tbname string) (sqlcmd []byte, err error) {
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
-	if err != nil {
-		log.Fatalf("TAOSSerializeTimeseries Open database error: %s\n", err)
-	}
-	defer db.Close()	
-	// assemble the create super table command line
+
 	buf := scratchBufPool.Get().([]byte)
 	s := fmt.Sprintf(" %s using %s tags(", tbname, stbn)
 	buf = append(buf, s...)	
