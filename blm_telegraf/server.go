@@ -450,7 +450,7 @@ func processBatches(iworker int) {
 			i = 1
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
-				log.Fatalf("Error writing: %s\n", strings.Join(sqlcmd, ""))//err.Error())
+				log.Fatalf("Error: %s, writing: %s\n",err, strings.Join(sqlcmd, ""))
 			}
 		}
 	}
@@ -458,7 +458,7 @@ func processBatches(iworker int) {
 		i = 1
 		_, err := db.Exec(strings.Join(sqlcmd, ""))
 		if err != nil {
-			log.Fatalf("Error writing: %s\n", strings.Join(sqlcmd, ""))//err.Error())
+			log.Fatalf("Error: %s, writing: %s\n",err, strings.Join(sqlcmd, ""))
 		}
 	}
 
