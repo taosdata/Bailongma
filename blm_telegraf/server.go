@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"encoding/json"
 	"container/list"
+	"time"
 
 	_ "github.com/taosdata/TDengine/src/connector/go/src/taosSql"
 
@@ -450,7 +451,21 @@ func processBatches(iworker int) {
 			i = 1
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
-				log.Fatalf("Error: %s, writing: %s\n",err, strings.Join(sqlcmd, ""))
+				
+				var count int = 2
+				for {
+				 	if err != nil && count >0{
+						<-time.After(time.Second*1)
+						_,err = db.Exec(strings.Join(sqlcmd, ""))
+						count--
+					}else {
+						if err != nil{
+							log.Printf("Error: %s sqlcmd: %s\n",err, strings.Join(sqlcmd, ""))
+						}
+						break
+					}
+					
+				}
 			}
 		}
 	}
@@ -458,7 +473,19 @@ func processBatches(iworker int) {
 		i = 1
 		_, err := db.Exec(strings.Join(sqlcmd, ""))
 		if err != nil {
-			log.Fatalf("Error: %s, writing: %s\n",err, strings.Join(sqlcmd, ""))
+			var count int = 2
+			for {
+			 	if err != nil && count >0{
+					<-time.After(time.Second*1)
+					_,err = db.Exec(strings.Join(sqlcmd, ""))
+					count--
+				}else {
+					if err != nil{
+						log.Printf("Error: %s sqlcmd: %s\n",err, strings.Join(sqlcmd, ""))
+					}						
+					break
+				}
+			}
 		}
 	}
 

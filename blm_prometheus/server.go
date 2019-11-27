@@ -13,6 +13,7 @@ import (
 	"flag"
 	"crypto/md5"
 	"strconv"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -57,7 +58,7 @@ var scratchBufPool = &sync.Pool{
 
 // Parse args:
 func init() {
-	flag.StringVar(&daemonUrl, "host", "192.168.0.4:0", "TDengine host.")
+	flag.StringVar(&daemonUrl, "host", "", "TDengine host.")
 	flag.IntVar(&batchSize, "batch-size", 10, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 10, "Number of parallel http requests handler .")
 	flag.IntVar(&sqlworkers, "sql-workers", 10, "Number of parallel sql handler.")
@@ -66,8 +67,14 @@ func init() {
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
 	flag.StringVar(&rwport, "port", "10202", "remote write port")
 
-
 	flag.Parse()
+	fmt.Print("host: ")
+	fmt.Print(daemonUrl)
+	fmt.Print("  port: ")
+	fmt.Print(rwport)
+	fmt.Print("  database: ")
+	fmt.Print(dbname)
+
 
 }
 
@@ -312,7 +319,21 @@ func processBatches(iworker int) {
 			i = 1
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
-				log.Fatalf("Error: %s sqlcmd: %s\n",err, strings.Join(sqlcmd, ""))
+				
+				var count int = 2
+				for {
+				 	if err != nil && count >0{
+						<-time.After(time.Second*1)
+						_,err = db.Exec(strings.Join(sqlcmd, ""))
+						count--
+					}else {
+						if err != nil{
+							log.Printf("Error: %s sqlcmd: %s\n",err, strings.Join(sqlcmd, ""))
+						}
+						break
+					}
+					
+				}
 			}
 		}
 	}
@@ -320,7 +341,19 @@ func processBatches(iworker int) {
 		i = 1
 		_, err := db.Exec(strings.Join(sqlcmd, ""))
 		if err != nil {
-			log.Fatalf("Error: %s sqlcmd: %s\n",err, strings.Join(sqlcmd, ""))
+			var count int = 2
+			for {
+			 	if err != nil && count >0{
+					<-time.After(time.Second*1)
+					_,err = db.Exec(strings.Join(sqlcmd, ""))
+					count--
+				}else {
+					if err != nil{
+						log.Printf("Error: %s sqlcmd: %s\n",err, strings.Join(sqlcmd, ""))
+					}						
+					break
+				}
+			}
 		}
 	}
 
