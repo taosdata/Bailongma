@@ -115,7 +115,10 @@ Query OK, 3029 row(s) in set (0.060828s)
 
 ```
 
+## Support Kubernates liveness probe
+The blm_prometheus support the liveness probe.
 
+When the service is running, GET the url`http://ip:port/health` will return 200 OK response which means the service is running healthy. If no response, means the service is dead and need to restart it.
 
 
 ## Limitations
