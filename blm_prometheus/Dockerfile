@@ -1,5 +1,5 @@
 ## Builder image
-FROM tdengine:latest as builder1
+FROM tdengine/tdengine:latest as builder1
 FROM golang:latest as builder
 
 
