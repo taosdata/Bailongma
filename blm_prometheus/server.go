@@ -289,7 +289,7 @@ func createDatabase(dbname string) {
 
 func checkErr(err error) {
 	if err != nil {
-		panic(err)
+		log.Println(err)
 	}
 }
 
@@ -304,7 +304,21 @@ func processBatches(iworker int) {
 	var i int
 	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
 	if err != nil {
-		log.Fatalf("processBatches Open database error: %s\n", err)
+		log.Printf("processBatches Open database error: %s\n", err)
+		var count int =5
+		for {
+			if err != nil && count >0{
+			   <-time.After(time.Second*1)
+			   _,err = sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+			   count--
+		   }else {
+			   if err != nil{
+				   log.Printf("Error: %s open database\n",err)
+				   return 
+			   }
+			   break
+		   }
+	   }
 	}
 	defer db.Close()
 	sqlcmd := make([]string, batchSize+1)
