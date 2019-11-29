@@ -65,7 +65,7 @@ func init() {
 	flag.StringVar(&dbname, "dbname", "prometheus", "Database name where to store metrics")
 	flag.StringVar(&dbuser, "dbuser", "root", "User for host to send result metrics")
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
-	flag.StringVar(&rwport, "port", "10202", "remote write port")
+	flag.StringVar(&rwport, "port", "10203", "remote write port")
 
 	flag.Parse()
 	fmt.Print("host: ")
