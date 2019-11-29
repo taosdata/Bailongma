@@ -14,11 +14,13 @@ COPY --from=builder1 /root/libtaos.so.1 /usr/lib/libtaos.so.1
 RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
 RUN git config --global http.sslVerify false
 RUN git config --global http.postbuffer 524288000
-RUN go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
-RUN go get github.com/gogo/protobuf/proto
-RUN go get github.com/golang/snappy
-RUN go get github.com/prometheus/common/model
-RUN go get github.com/prometheus/prometheus/prompb
+
+
+RUN go get -v -u -insecure github.com/taosdata/TDengine/src/connector/go/src/taosSql
+RUN go get -v -u -insecure github.com/gogo/protobuf/proto
+RUN go get -v -u -insecure github.com/golang/snappy
+RUN go get -v -u -insecure github.com/prometheus/common/model
+RUN go get -v -u -insecure github.com/prometheus/prometheus/prompb
 
 RUN go build
 # # build community version
@@ -46,7 +48,7 @@ ENV LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib"
 ENV LANG=en_US.UTF-8  
 ENV LANGUAGE=en_US:en  
 ENV LC_ALL=en_US.UTF-8
-
+EXPOSE 10203
 VOLUME [ "/var/lib/taos", "/var/log/taos" ]
 
 CMD [ "/root/blm_prometheus" ]
