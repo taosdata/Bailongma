@@ -27,19 +27,6 @@ type metric struct {
 	TimeStamp int64
 }
 
-type tdschema struct {
-	StbName     string
-	Tags        *list.List
-	Values      *list.List
-	MultiMetric bool
-}
-
-type tdpoint struct {
-	StbName string
-	Tags    *list.List
-	Value   int64
-}
-
 type Metrics struct {
 	Metrics []metric
 	HostIP  string
@@ -95,7 +82,7 @@ func init() {
 	flag.StringVar(&rwport, "port", "10202", "remote write port")
 
 	flag.Parse()
-
+	daemonUrl = daemonUrl+":0"
 	nametagmap = make(map[string]nametag)
 
 }
@@ -142,7 +129,7 @@ func main() {
 		nodeChans[idx%httpworkers] <- req
 	})
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusNoContent)
 	})
 	log.Fatal(http.ListenAndServe(":"+rwport, nil))
 
