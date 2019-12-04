@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"container/list"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -24,6 +25,11 @@ import (
 )
 
 type Bailongma struct {
+}
+
+type nametag struct {
+	tagmap  map[string]string
+	taglist *list.List
 }
 
 var (
@@ -49,6 +55,7 @@ var (
 	reportHostname string
 	taosDriverName string = "taosSql"
 	IsSTableCreated      sync.Map
+	IsTableCreated  	 sync.Map	
 )
 var scratchBufPool = &sync.Pool{
 	New: func() interface{} {
@@ -59,6 +66,7 @@ var scratchBufPool = &sync.Pool{
 // Parse args:
 func init() {
 	flag.StringVar(&daemonUrl, "host", "", "TDengine host.")
+	
 	flag.IntVar(&batchSize, "batch-size", 10, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 10, "Number of parallel http requests handler .")
 	flag.IntVar(&sqlworkers, "sql-workers", 10, "Number of parallel sql handler.")
@@ -68,6 +76,7 @@ func init() {
 	flag.StringVar(&rwport, "port", "10203", "remote write port")
 
 	flag.Parse()
+	daemonUrl = daemonUrl+":0"
 	fmt.Print("host: ")
 	fmt.Print(daemonUrl)
 	fmt.Print("  port: ")
@@ -126,56 +135,12 @@ func main() {
 		nodeChans[idx%httpworkers] <- req
 	})
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	log.Fatal(http.ListenAndServe(":"+rwport, nil))
 
 
-}
-
-func TAOSSerializeTimeseries(ts prompb.TimeSeries, stbn string,tbname string) (sqlcmd []byte, err error) {
-
-	buf := scratchBufPool.Get().([]byte)
-	s := fmt.Sprintf(" %s using %s tags(", tbname, stbn)
-	buf = append(buf, s...)	
-	var head int =0
-	
-	for _,l := range ts.Labels{
-		if string(l.Name) == "__name__" {
-			continue
-		}
-		if head ==0{
-			buf = append(buf, "\""+string(l.Value)+"\""...)
-			head =1
-		}else {
-			buf = append(buf,",\""+string(l.Value)+"\""...)
-		}
-	}
-	buf = append(buf,") values("...)
-	head = 0
-	for _, s := range ts.Samples {
-		if head ==0{
-			var t int64
-			var vl float64
-			var v string 
-			vl = s.GetValue()
-			t = s.GetTimestamp()
-			flt := strconv.FormatFloat(vl,'E',-1,64)
-			if flt == "NaN" { 
-				v = fmt.Sprintf("%d,null)", t)
-			}else {
-				v = fmt.Sprintf("%d,%f)", t, vl)
-			}
-	
-			buf = append(buf,v...)
-			head = 1
-		}else {
-			einfo := fmt.Sprintf("%d values, more than one value, have to redesign", len(ts.Samples))
-			panic(einfo)
-		}
-	}
-	return buf, nil	
 }
 
 func TAOShashID(ba []byte) int {
@@ -198,15 +163,19 @@ func NodeProcess(workerid int) error {
 }
 
 func ProcessReq(req prompb.WriteRequest) error{
+	taglist:= list.New()
+	tagmap:= make(map[string]string)
 
 
 	for _, ts := range req.Timeseries {
-		//TAOSSerializeTimeseries(ts, db)
+
 		m := make(model.Metric, len(ts.Labels))
 		var tbn string 
 		for _, l := range ts.Labels {
 			m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 			tbn = tbn+ string(l.Value)
+			taglist.PushBack(string(l.Name))
+			tagmap[string(l.Name)] = string(l.Value)
 		}
 		metricName, hasName := m["__name__"]
 		if hasName {
@@ -215,21 +184,45 @@ func ProcessReq(req prompb.WriteRequest) error{
 				//stbname = "md5_"+md5V2(stbname)
 				stbname = string([]byte(stbname)[:60])
 			}
-			_,ok := IsSTableCreated.Load(stbname)
+			schema,ok := IsSTableCreated.Load(stbname)
 			if !ok {
-				TAOSCreateStable(ts,stbname,dbname)
-			}else {
-				idx := TAOShashID([]byte(tbn))
-				tbn = "md5_"+md5V2(tbn)
-				sqlCmd,_:= TAOSSerializeTimeseries(ts,stbname,tbn)
-				if sqlCmd != nil{
-					batchChans[idx%sqlworkers]<- string(sqlCmd)
-
-				}else {
-					info := fmt.Sprintf("serilize faild, stbname %s",stbname)
-					panic(info)
+				var nt nametag
+				taglist = list.New()
+				tagmap = make(map[string]string)				
+				nt.taglist = taglist
+				nt.tagmap = tagmap
+				IsSTableCreated.Store(stbname,nt)	
+				var sqlcmd string
+				sqlcmd = "create table if not exists " + stbname + " (ts timestamp, value double) tags("
+				i := 0
+				for e := taglist.Front(); e != nil; e = e.Next() {
+					if i == 0 {
+						sqlcmd = sqlcmd + e.Value.(string) + " binary(50)"	
+					}else {
+						sqlcmd = ","+sqlcmd + e.Value.(string) + " binary(50)"
+					}
+					i++
 				}
+				sqlcmd = sqlcmd + ")\n"
 
+				execSql(dbname, sqlcmd)
+				SerilizeTDengine(ts, stbname, tbn,taglist,tagmap)
+			}else {
+				nt := schema.(nametag)
+				tagmap = nt.tagmap
+				taglist = nt.taglist
+				var sqlcmd string 
+				for _,l := range ts.Labels {
+					k:= string(l.Name)
+					_,ok := tagmap[k]
+					if !ok {
+						sqlcmd = sqlcmd + "alter table" + stbname +" add tag " +k +" binary(40)\n"
+						taglist.PushBack(k)
+						tagmap[k] = string(l.Value)
+					}
+				}
+				execSql(dbname, sqlcmd)
+				SerilizeTDengine(ts, stbname, tbn,taglist,tagmap)
 			}
 		}else {
 			info := fmt.Sprintf("no name metric")
@@ -239,40 +232,51 @@ func ProcessReq(req prompb.WriteRequest) error{
 	return nil
 }
 
-func TAOSCreateStable(ts prompb.TimeSeries, tname string,dbn string) error {
-	
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbn)
-	if err != nil {
-		log.Fatalf("TAOSCreateStable Open database error: %s\n", err)
-	}
-	defer db.Close()	
-	// assemble the create super table command line
-	buf := scratchBufPool.Get().([]byte)
-	s := fmt.Sprintf("create table if not exists %s (ts timestamp, value1 double) tags(", tname)
-	buf = append(buf, s...)
-	
-	var start int = 0
-	for _, l := range ts.Labels {
-		if l.Name == "__name__"{
-			continue
+func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *list.List, tagmap map[string]string) error {
+
+	s :="MD5_"+md5V2(tbn)
+	_, ok := IsTableCreated.Load(s)
+	if !ok {
+		var sqlcmd string
+		sqlcmd = "create table if not exists " + s + " using " + stbname + " tags("
+
+		for e := taglist.Front(); e != nil; e = e.Next() {
+			tagvalue, has := tagmap[e.Value.(string)]
+			if len(tagvalue) >= 60 {
+				tagvalue = tagvalue[:59]
+			}
+			i:=0
+			if i ==0 {
+				if has {
+					sqlcmd = sqlcmd + "\"" + tagvalue + "\""
+				} else {
+					sqlcmd = sqlcmd + "null"
+				}
+				i++
+			}else {
+				if has {
+					sqlcmd = sqlcmd + ",\"" + tagvalue + "\""
+				} else {
+					sqlcmd = sqlcmd + ",null"
+				}				
+			}
+
 		}
-		if start == 0{
-			buf = append(buf, "t_"+l.Name+" binary(50)"...)
-			start  = 1
-		}else {
-			buf = append(buf, ", t_"+l.Name+" binary(50)"...)
-		}
+		sqlcmd = sqlcmd + ")\n"
+		execSql(dbname, sqlcmd)
+		IsTableCreated.Store(s, true)
+	} else {
+		idx := TAOShashID([]byte(s))
+		sqlcmd := " " + s + " values("
+		vl:= m.Samples[0].GetValue()
+		vls := strconv.FormatFloat(vl,'E',-1, 64)
+		tl := m.Samples[0].GetTimestamp()
+		tls := strconv.FormatInt(tl, 10)
+		sqlcmd = sqlcmd + tls + "," + vls + ")"
+
+		batchChans[idx%sqlworkers] <- sqlcmd
 	}
-	buf = append(buf,");\n"...)
-	_, err = db.Exec(string(buf))
-	if err != nil {
-		log.Fatalf("Error writing: %s\n", string(buf))//err.Error())
-	}
-	IsSTableCreated.Store(tname,true)
-	//fmt.Println(string(buf))
-	
-	buf = buf[:0]
-	scratchBufPool.Put(buf)
+
 	return nil
 }
 
@@ -287,6 +291,36 @@ func createDatabase(dbname string) {
 	sqlcmd = fmt.Sprintf("use %s", dbname)
 	_, err = db.Exec(sqlcmd)
 	checkErr(err)
+	return
+}
+
+func execSql(dbname string, sqlcmd string) {
+	if len(sqlcmd) < 1 {
+		return
+	}
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+	if err != nil {
+		log.Fatalf("Open database error: %s\n", err)
+	}
+	defer db.Close()
+	_, err = db.Exec(sqlcmd)
+	if err != nil {
+		var count int = 2
+		for {
+			if err != nil && count > 0 {
+				<-time.After(time.Second * 1)
+				_, err = db.Exec(sqlcmd)
+				count--
+			} else {
+				if err != nil {
+					log.Printf("Error: %s sqlcmd: %s\n", err, sqlcmd)
+					return
+				}
+				break
+			}
+
+		}
+	}
 	return
 }
 
