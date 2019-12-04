@@ -175,6 +175,9 @@ func ProcessReq(req prompb.WriteRequest) error{
 			m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 			tbn = tbn+ string(l.Value)
 			taglist.PushBack(string(l.Name))
+			fmt.Printf(string(l.Name))
+			fmt.Printf(" : ")
+			fmt.Println(string(l.Value))
 			tagmap[string(l.Name)] = string(l.Value)
 		}
 		metricName, hasName := m["__name__"]
@@ -187,8 +190,7 @@ func ProcessReq(req prompb.WriteRequest) error{
 			schema,ok := IsSTableCreated.Load(stbname)
 			if !ok {
 				var nt nametag
-				taglist = list.New()
-				tagmap = make(map[string]string)				
+
 				nt.taglist = taglist
 				nt.tagmap = tagmap
 				IsSTableCreated.Store(stbname,nt)	
@@ -239,13 +241,13 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 	if !ok {
 		var sqlcmd string
 		sqlcmd = "create table if not exists " + s + " using " + stbname + " tags("
-
+		i:=0
 		for e := taglist.Front(); e != nil; e = e.Next() {
 			tagvalue, has := tagmap[e.Value.(string)]
 			if len(tagvalue) >= 60 {
 				tagvalue = tagvalue[:59]
 			}
-			i:=0
+			
 			if i ==0 {
 				if has {
 					sqlcmd = sqlcmd + "\"" + tagvalue + "\""
