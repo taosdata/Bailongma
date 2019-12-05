@@ -1,6 +1,6 @@
 ## Builder image
 FROM tdengine/tdengine:latest as builder1
-FROM golang:latest as builder
+FROM tdengine/bailongma:latest as builder
 
 
 COPY server.go /root/blm_prometheus/
@@ -8,19 +8,6 @@ COPY server.go /root/blm_prometheus/
 WORKDIR /root/blm_prometheus
 
 # build enterprise version
-
-COPY --from=builder1 /root/taos.h /usr/include/
-COPY --from=builder1 /root/libtaos.so.1 /usr/lib/libtaos.so.1
-RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
-RUN git config --global http.sslVerify false
-RUN git config --global http.postbuffer 524288000
-
-
-RUN go get -v -u -insecure github.com/taosdata/TDengine/src/connector/go/src/taosSql
-RUN go get -v -u -insecure github.com/gogo/protobuf/proto
-RUN go get -v -u -insecure github.com/golang/snappy
-RUN go get -v -u -insecure github.com/prometheus/common/model
-RUN go get -v -u -insecure github.com/prometheus/prometheus/prompb
 
 RUN go build
 # # build community version
