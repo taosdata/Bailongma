@@ -1,18 +1,12 @@
 ## Builder image
 FROM tdengine/tdengine:latest as builder1
-FROM golang:latest as builder
+FROM tdengine/bailongma:latest as builder
 
 
 COPY server.go /root/blm_telegraf/
 
 WORKDIR /root/blm_telegraf
 
-# build enterprise version
-
-COPY --from=builder1 /root/taos.h /usr/include/
-COPY --from=builder1 /root/libtaos.so.1 /usr/lib/libtaos.so.1
-RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
-RUN go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
 
 RUN go build
 # # build community version
