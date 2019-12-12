@@ -15,7 +15,7 @@ RUN go build
 ## Target image
 
 
-FROM centos:7
+FROM alpine:latest
 
 WORKDIR /root
 
@@ -34,7 +34,7 @@ ENV LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/lib"
 ENV LANG=en_US.UTF-8  
 ENV LANGUAGE=en_US:en  
 ENV LC_ALL=en_US.UTF-8
-
+EXPOSE 10202
 VOLUME [ "/var/lib/taos", "/var/log/taos" ]
 
-CMD [ "/root/blm_telegraf" ]
+ENTRYPOINT [ "/root/blm_telegraf" ]

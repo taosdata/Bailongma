@@ -177,7 +177,7 @@ func ProcessReq(req prompb.WriteRequest) error {
 
 			taglist.PushBack(string(l.Name))
 
-			tagmap[string(l.Name)] = string(l.Value)
+			tagmap[string(l.Name)] = string(l.Value)[:20]
 		}
 		metricName, hasName := m["__name__"]
 		if hasName {
@@ -198,9 +198,9 @@ func ProcessReq(req prompb.WriteRequest) error {
 				i := 0
 				for e := taglist.Front(); e != nil; e = e.Next() {
 					if i == 0 {
-						sqlcmd = sqlcmd + "t_" + e.Value.(string) + " binary(50)"
+						sqlcmd = sqlcmd + "t_" + e.Value.(string)[:20] + " binary(20)"
 					} else {
-						sqlcmd = sqlcmd + ",t_" + e.Value.(string) + " binary(50)"
+						sqlcmd = sqlcmd + ",t_" + e.Value.(string)[:20] + " binary(20)"
 					}
 					i++
 					s, _ := tagmap[e.Value.(string)]
@@ -222,9 +222,9 @@ func ProcessReq(req prompb.WriteRequest) error {
 					}
 					_, ok := tagmap[k]
 					if !ok {
-						sqlcmd = sqlcmd + " alter table " + stbname + " add tag t_" + k + " binary(40)\n"
+						sqlcmd = sqlcmd + " alter table " + stbname + " add tag t_" + k + " binary(20)\n"
 						taglist.PushBack(k)
-						tagmap[k] = string(l.Value)
+						tagmap[k] = string(l.Value)[:20]
 						execSql(dbname, sqlcmd)
 					}
 				}

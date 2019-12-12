@@ -16,7 +16,7 @@ RUN go build
 ## Target image
 
 
-FROM centos:7
+FROM alpine:latest
 
 WORKDIR /root/
 
@@ -38,4 +38,4 @@ ENV LC_ALL=en_US.UTF-8
 EXPOSE 10203
 VOLUME [ "/var/lib/taos", "/var/log/taos" ]
 
-CMD [ "/root/blm_prometheus" ]
+ENTRYPOINT  [ "/root/blm_prometheus" ]
