@@ -84,6 +84,12 @@ func init() {
 	flag.Parse()
 	daemonUrl = daemonUrl+":0"
 	nametagmap = make(map[string]nametag)
+	fmt.Print("host: ")
+	fmt.Print(daemonUrl)
+	fmt.Print("  port: ")
+	fmt.Print(rwport)
+	fmt.Print("  database: ")
+	fmt.Print(dbname)
 
 }
 
