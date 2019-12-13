@@ -57,6 +57,8 @@ var (
 	taosDriverName  string = "taosSql"
 	IsSTableCreated sync.Map
 	IsTableCreated  sync.Map
+	taglen			int
+	tagstr          string
 )
 var scratchBufPool = &sync.Pool{
 	New: func() interface{} {
@@ -76,6 +78,7 @@ func init() {
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
 	flag.StringVar(&rwport, "port", "10203", "remote write port")
 	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
+	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
 
 	flag.Parse()
 	daemonUrl = daemonUrl + ":0"
@@ -85,6 +88,7 @@ func init() {
 	fmt.Print(rwport)
 	fmt.Print("  database: ")
 	fmt.Print(dbname)
+	tagstr =fmt.Sprintf(" binary(%d)",taglen)
 
 }
 
@@ -176,13 +180,16 @@ func ProcessReq(req prompb.WriteRequest) error {
 			}
 
 			taglist.PushBack(string(l.Name))
-
-			tagmap[string(l.Name)] = string(l.Value)[:20]
+			s:=string(l.Value)
+			if len(s)>taglen {
+				s = s[:taglen]
+			}
+			tagmap[string(l.Name)] = s
 		}
 		metricName, hasName := m["__name__"]
 		if hasName {
 			stbname := string(metricName)
-			if len(stbname) >= 60 {
+			if len(stbname) > 60 {
 				//stbname = "md5_"+md5V2(stbname)
 				stbname = string([]byte(stbname)[:60])
 			}
@@ -198,9 +205,9 @@ func ProcessReq(req prompb.WriteRequest) error {
 				i := 0
 				for e := taglist.Front(); e != nil; e = e.Next() {
 					if i == 0 {
-						sqlcmd = sqlcmd + "t_" + e.Value.(string)[:20] + " binary(20)"
+						sqlcmd = sqlcmd + "t_" + e.Value.(string) + tagstr
 					} else {
-						sqlcmd = sqlcmd + ",t_" + e.Value.(string)[:20] + " binary(20)"
+						sqlcmd = sqlcmd + ",t_" + e.Value.(string) + tagstr
 					}
 					i++
 					s, _ := tagmap[e.Value.(string)]
@@ -222,9 +229,13 @@ func ProcessReq(req prompb.WriteRequest) error {
 					}
 					_, ok := tagmap[k]
 					if !ok {
-						sqlcmd = sqlcmd + " alter table " + stbname + " add tag t_" + k + " binary(20)\n"
+						sqlcmd = "alter table " + stbname + " add tag t_" + k + tagstr+"\n"
 						taglist.PushBack(k)
-						tagmap[k] = string(l.Value)[:20]
+						s:= string(l.Value)
+						if len(s) > taglen {
+							s = s[:taglen]
+						}
+						tagmap[k] = s
 						execSql(dbname, sqlcmd)
 					}
 				}
@@ -259,10 +270,6 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 		i := 0
 		for e := taglist.Front(); e != nil; e = e.Next() {
 			tagvalue, has := tagmap[e.Value.(string)]
-			if len(tagvalue) >= 60 {
-				tagvalue = tagvalue[:59]
-			}
-
 			if i == 0 {
 				if has {
 					sqlcmd = sqlcmd + "\"" + tagvalue + "\""
