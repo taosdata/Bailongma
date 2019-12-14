@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"os"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -43,6 +44,7 @@ var (
 	dbpassword  string
 	rwport      string
 	debugprt    int
+	taglen		int
 )
 
 // Global vars
@@ -57,8 +59,9 @@ var (
 	taosDriverName  string = "taosSql"
 	IsSTableCreated sync.Map
 	IsTableCreated  sync.Map
-	taglen			int
 	tagstr          string
+	blmLog	       *log.Logger
+	logNameDefault  string = "/var/log/taos/blm_prometheus.log"
 )
 var scratchBufPool = &sync.Pool{
 	New: func() interface{} {
@@ -89,6 +92,14 @@ func init() {
 	fmt.Print("  database: ")
 	fmt.Print(dbname)
 	tagstr =fmt.Sprintf(" binary(%d)",taglen)
+	logFile, err := os.OpenFile(logNameDefault, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	blmLog = log.New(logFile, "", log.LstdFlags)
+	blmLog.SetPrefix("BLM PRMTS ")
+	blmLog.SetFlags(log.LstdFlags|log.Lshortfile)
 
 }
 
@@ -141,7 +152,7 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	log.Fatal(http.ListenAndServe(":"+rwport, nil))
+	blmLog.Fatal(http.ListenAndServe(":"+rwport, nil))
 
 }
 
@@ -185,6 +196,10 @@ func ProcessReq(req prompb.WriteRequest) error {
 				s = s[:taglen]
 			}
 			tagmap[string(l.Name)] = s
+		}
+		if debugprt == 2 {
+			blmLog.Printf(" Ts: %d, value: %f, ",ts.Samples[0].Timestamp,ts.Samples[0].Value)
+			blmLog.Println(m)
 		}
 		metricName, hasName := m["__name__"]
 		if hasName {
@@ -258,11 +273,6 @@ func ProcessReq(req prompb.WriteRequest) error {
 func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *list.List, tagmap map[string]string) error {
 
 	s := "MD5_" + md5V2(tbn)
-	/*if debugprt == 2 {
-		fmt.Print(tbn)
-		fmt.Print(" : ")
-		fmt.Println(s)
-	}*/
 	_, ok := IsTableCreated.Load(s)
 	if !ok {
 		var sqlcmd string
@@ -331,7 +341,7 @@ func execSql(dbname string, sqlcmd string) {
 	}
 	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
 	if err != nil {
-		log.Fatalf("Open database error: %s\n", err)
+		blmLog.Fatalf("Open database error: %s\n", err)
 	}
 	defer db.Close()
 	_, err = db.Exec(sqlcmd)
@@ -344,7 +354,7 @@ func execSql(dbname string, sqlcmd string) {
 				count--
 			} else {
 				if err != nil {
-					log.Printf("Error: %s sqlcmd: %s\n", err, sqlcmd)
+					blmLog.Printf("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
 					return
 				}
 				break
@@ -357,7 +367,7 @@ func execSql(dbname string, sqlcmd string) {
 
 func checkErr(err error) {
 	if err != nil {
-		log.Println(err)
+		blmLog.Println(err)
 	}
 }
 
@@ -372,7 +382,7 @@ func processBatches(iworker int) {
 	var i int
 	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
 	if err != nil {
-		log.Printf("processBatches Open database error: %s\n", err)
+		blmLog.Printf("processBatches Open database error: %s\n", err)
 		var count int = 5
 		for {
 			if err != nil && count > 0 {
@@ -381,7 +391,7 @@ func processBatches(iworker int) {
 				count--
 			} else {
 				if err != nil {
-					log.Printf("Error: %s open database\n", err)
+					blmLog.Printf("processBatches Error: %s open database\n", err)
 					return
 				}
 				break
@@ -410,7 +420,7 @@ func processBatches(iworker int) {
 						count--
 					} else {
 						if err != nil {
-							log.Printf("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
+							blmLog.Printf("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
 						}
 						break
 					}
@@ -431,7 +441,7 @@ func processBatches(iworker int) {
 					count--
 				} else {
 					if err != nil {
-						log.Printf("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
+						blmLog.Printf("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
 					}
 					break
 				}
