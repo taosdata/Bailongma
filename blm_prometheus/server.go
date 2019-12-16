@@ -98,7 +98,7 @@ func init() {
 		os.Exit(1)
 	}
 	blmLog = log.New(logFile, "", log.LstdFlags)
-	blmLog.SetPrefix("BLM PRMTS ")
+	blmLog.SetPrefix("BLM_PRM")
 	blmLog.SetFlags(log.LstdFlags|log.Lshortfile)
 
 }
@@ -299,22 +299,21 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 		sqlcmd = sqlcmd + ")\n"
 		execSql(dbname, sqlcmd)
 		IsTableCreated.Store(s, true)
-	} else {
-		idx := TAOShashID([]byte(s))
-		sqlcmd := " " + s + " values("
-		vl := m.Samples[0].GetValue()
-		vls := strconv.FormatFloat(vl, 'E', -1, 64)
+	} 
+	idx := TAOShashID([]byte(s))
+	sqlcmd := " " + s + " values("
+	vl := m.Samples[0].GetValue()
+	vls := strconv.FormatFloat(vl, 'E', -1, 64)
 
-		if vls == "NaN" {
-			vls = "null"
-		}
-		tl := m.Samples[0].GetTimestamp()
-		tls := strconv.FormatInt(tl, 10)
-		sqlcmd = sqlcmd + tls + "," + vls + ")"
-
-		batchChans[idx%sqlworkers] <- sqlcmd
+	if vls == "NaN" {
+		vls = "null"
 	}
+	tl := m.Samples[0].GetTimestamp()
+	tls := strconv.FormatInt(tl, 10)
+	sqlcmd = sqlcmd + tls + "," + vls + ")"
 
+	batchChans[idx%sqlworkers] <- sqlcmd
+	
 	return nil
 }
 
