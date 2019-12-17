@@ -71,7 +71,7 @@ var scratchBufPool = &sync.Pool{
 
 // Parse args:
 func init() {
-	flag.StringVar(&daemonUrl, "host", "", "TDengine host.")
+	flag.StringVar(&daemonUrl, "host", "127.0.0.1", "TDengine host.")
 
 	flag.IntVar(&batchSize, "batch-size", 10, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 10, "Number of parallel http requests handler .")
