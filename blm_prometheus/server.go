@@ -74,7 +74,7 @@ var scratchBufPool = &sync.Pool{
 
 // Parse args:
 func init() {
-	flag.StringVar(&daemonUrl, "host", "192.168.1.114", "TDengine host.")
+	flag.StringVar(&daemonUrl, "host", "127.0.0.1", "TDengine host.")
 
 	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 1, "Number of parallel http requests handler .")
@@ -154,7 +154,7 @@ func main() {
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	if debugprt == 1{
+	if debugprt == 5 {
 		TestSerialization()
 	}
 	blmLog.Fatal(http.ListenAndServe(":"+rwport, nil))
@@ -317,10 +317,10 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 	}
 	tl := m.Samples[0].GetTimestamp()
 	tls := strconv.FormatInt(tl, 10)
-	sqlcmd = sqlcmd + tls + "," + vls + ")"
-
+	sqlcmd = "Import into "+sqlcmd + tls + "," + vls + ")\n"
+//	execSql(dbname,sqlcmd)
 	batchChans[idx%sqlworkers] <- sqlcmd
-	//fmt.Println(idx,"  ",sqlcmd)
+//	blmLog.Println(idx%sqlworkers," ",sqlcmd)
 	//sqlcmd = ""
 	return nil
 }
@@ -416,6 +416,7 @@ func processBatches(iworker int) {
 		i++
 		if i > batchSize {
 			i = 1
+			//blmLog.Printf(strings.Join(sqlcmd, ""))
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
 				blmLog.Printf("processBatches error %s",err)
@@ -436,8 +437,9 @@ func processBatches(iworker int) {
 			}
 		}
 	}
-	if i > 0 {
+	if i > 1 {
 		i = 1
+//		blmLog.Printf(strings.Join(sqlcmd, ""))
 		_, err := db.Exec(strings.Join(sqlcmd, ""))
 		if err != nil {
 			var count int = 2
