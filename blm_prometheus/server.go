@@ -16,6 +16,9 @@ import (
 	"sync"
 	"time"
 	"os"
+	"path/filepath"
+	"bufio"
+	"io"	
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -71,16 +74,16 @@ var scratchBufPool = &sync.Pool{
 
 // Parse args:
 func init() {
-	flag.StringVar(&daemonUrl, "host", "127.0.0.1", "TDengine host.")
+	flag.StringVar(&daemonUrl, "host", "192.168.1.114", "TDengine host.")
 
-	flag.IntVar(&batchSize, "batch-size", 10, "Batch size (input items).")
-	flag.IntVar(&httpworkers, "http-workers", 10, "Number of parallel http requests handler .")
-	flag.IntVar(&sqlworkers, "sql-workers", 10, "Number of parallel sql handler.")
+	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
+	flag.IntVar(&httpworkers, "http-workers", 1, "Number of parallel http requests handler .")
+	flag.IntVar(&sqlworkers, "sql-workers", 1, "Number of parallel sql handler.")
 	flag.StringVar(&dbname, "dbname", "prometheus", "Database name where to store metrics")
 	flag.StringVar(&dbuser, "dbuser", "root", "User for host to send result metrics")
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
 	flag.StringVar(&rwport, "port", "10203", "remote write port")
-	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
+	flag.IntVar(&debugprt, "debugprt", 1, "if 0 not print, if 1 print the sql")
 	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
 
 	flag.Parse()
@@ -151,7 +154,9 @@ func main() {
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-
+	if debugprt == 1{
+		TestSerialization()
+	}
 	blmLog.Fatal(http.ListenAndServe(":"+rwport, nil))
 
 }
@@ -234,7 +239,7 @@ func ProcessReq(req prompb.WriteRequest) error {
 				SerilizeTDengine(ts, stbname, tbn, taglist, tagmap)
 			} else {
 				nt := schema.(nametag)
-				tagmap = nt.tagmap
+				tagmp := nt.tagmap
 				taglist = nt.taglist
 				var sqlcmd string
 				for _, l := range ts.Labels {
@@ -242,7 +247,7 @@ func ProcessReq(req prompb.WriteRequest) error {
 					if k == "__name__" {
 						continue
 					}
-					_, ok := tagmap[k]
+					_, ok := tagmp[k]
 					if !ok {
 						sqlcmd = "alter table " + stbname + " add tag t_" + k + tagstr+"\n"
 						taglist.PushBack(k)
@@ -250,7 +255,8 @@ func ProcessReq(req prompb.WriteRequest) error {
 						if len(s) > taglen {
 							s = s[:taglen]
 						}
-						tagmap[k] = s
+						tagmp[k] = s
+
 						execSql(dbname, sqlcmd)
 					}
 				}
@@ -261,6 +267,7 @@ func ProcessReq(req prompb.WriteRequest) error {
 				}
 				tbn = stbname + tbn
 				SerilizeTDengine(ts, stbname, tbn, taglist, tagmap)
+				nt.tagmap = tagmap
 			}
 		} else {
 			info := fmt.Sprintf("no name metric")
@@ -313,7 +320,8 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 	sqlcmd = sqlcmd + tls + "," + vls + ")"
 
 	batchChans[idx%sqlworkers] <- sqlcmd
-	
+	//fmt.Println(idx,"  ",sqlcmd)
+	//sqlcmd = ""
 	return nil
 }
 
@@ -400,9 +408,9 @@ func processBatches(iworker int) {
 	defer db.Close()
 	sqlcmd := make([]string, batchSize+1)
 	i = 0
-	sqlcmd[i] = "Insert into"
+	sqlcmd[i] = "Import into"
 	i++
-
+	//blmLog.Printf("processBatches")
 	for onepoint := range batchChans[iworker] {
 		sqlcmd[i] = onepoint
 		i++
@@ -410,7 +418,7 @@ func processBatches(iworker int) {
 			i = 1
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
-
+				blmLog.Printf("processBatches error %s",err)
 				var count int = 2
 				for {
 					if err != nil && count > 0 {
@@ -449,4 +457,88 @@ func processBatches(iworker int) {
 	}
 
 	workersGroup.Done()
+}
+
+func TestSerialization() {
+	var req prompb.WriteRequest
+	var ts []prompb.TimeSeries
+	var tse prompb.TimeSeries
+	var sample *prompb.Sample
+	var label prompb.Label
+	var lbs []prompb.Label
+	promPath, err := os.Getwd()
+	if err != nil {
+		fmt.Printf("can't get current dir :%s \n", err)
+		os.Exit(1)
+	}
+	promPath = filepath.Join(promPath, "testData/blm_prometheus.log")
+	testfile,err := os.OpenFile(promPath,os.O_RDWR,0666)
+	if err != nil {
+        fmt.Println("Open file error!", err)
+        return
+	}
+	defer testfile.Close()
+	fmt.Println(promPath)
+	buf := bufio.NewReader(testfile)
+	i :=0
+	lasttime := "20:40:20"
+	for {
+		line, err := buf.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				fmt.Println("File read ok! line:", i)
+				break
+			} else {
+				fmt.Println("Read file error!",err)
+				return 
+			}
+		}
+		sa := strings.Split(line," ")
+
+		if strings.Contains(line,"server.go:201:")  {
+			if sa[3] != lasttime {
+				nodeChans[0]<-req
+				lasttime = sa[3]
+				req.Timeseries = req.Timeseries[:0]
+				ts = ts[:0]
+			}			
+			tse.Samples = make([]prompb.Sample,0)
+			T, _ := strconv.ParseInt(sa[7][:(len(sa[7])-1)],10,64)
+			V,_  := strconv.ParseFloat(sa[9][:(len(sa[9])-1)],64)
+			sample = &prompb.Sample{
+				Value: V,
+				Timestamp: T, 
+			}
+			tse.Samples = append(tse.Samples,*sample)
+		}else if strings.Contains(line,"server.go:202:") {
+			lbs = make([]prompb.Label,0)
+			lb := strings.Split(line[45:],"{")
+			label.Name = "__name__"
+			label.Value = lb[0]
+			lbs = append(lbs,label)
+			lbc := strings.Split(lb[1][:len(lb[1])-1],", ")
+			for i = 0;i<len(lbc);i++ {
+				content := strings.Split(lbc[i],"=\"")
+				label.Name = content[0]							
+				if (i == len(lbc)-1){
+					label.Value = content[1][:len(content[1])-2]	
+				}else {
+
+					label.Value = content[1][:len(content[1])-1]
+				}
+				lbs = append(lbs,label)
+			}
+			tse.Labels = lbs
+			ts = append(ts,tse)
+			req.Timeseries =  ts
+		}
+		
+
+		
+		
+
+
+		
+	}
+
 }
