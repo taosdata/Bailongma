@@ -83,7 +83,7 @@ func init() {
 	flag.StringVar(&dbuser, "dbuser", "root", "User for host to send result metrics")
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
 	flag.StringVar(&rwport, "port", "10203", "remote write port")
-	flag.IntVar(&debugprt, "debugprt", 1, "if 0 not print, if 1 print the sql")
+	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
 	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
 
 	flag.Parse()
@@ -317,7 +317,7 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 	}
 	tl := m.Samples[0].GetTimestamp()
 	tls := strconv.FormatInt(tl, 10)
-	sqlcmd = "Import into "+sqlcmd + tls + "," + vls + ")\n"
+	sqlcmd = sqlcmd + tls + "," + vls + ")\n"
 //	execSql(dbname,sqlcmd)
 	batchChans[idx%sqlworkers] <- sqlcmd
 //	blmLog.Println(idx%sqlworkers," ",sqlcmd)
@@ -343,9 +343,7 @@ func execSql(dbname string, sqlcmd string) {
 	if len(sqlcmd) < 1 {
 		return
 	}
-	if debugprt == 1 {
-		fmt.Println(sqlcmd)
-	}
+
 	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
 	if err != nil {
 		blmLog.Fatalf("Open database error: %s\n", err)
