@@ -507,7 +507,7 @@ func processBatches(iworker int) {
 			}
 		}
 	}
-	if i > 0 {
+	if i > 1 {
 		i = 1
 		_, err := db.Exec(strings.Join(sqlcmd, ""))
 		if err != nil {
