@@ -12,11 +12,12 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"os"
 
 	_ "github.com/taosdata/TDengine/src/connector/go/src/taosSql"
 )
@@ -44,7 +45,7 @@ var (
 	dbpassword  string
 	rwport      string
 	debugprt    int
-	taglen		int
+	taglen      int
 )
 
 type nametag struct {
@@ -67,7 +68,7 @@ var (
 	taglist         *list.List
 	nametagmap      map[string]nametag
 	tagstr          string
-	blmLog	       *log.Logger
+	blmLog          *log.Logger
 	logNameDefault  string = "/var/log/taos/blm_telegraf.log"
 )
 var scratchBufPool = &sync.Pool{
@@ -91,7 +92,7 @@ func init() {
 	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
 
 	flag.Parse()
-	daemonUrl = daemonUrl+":0"
+	daemonUrl = daemonUrl + ":0"
 	nametagmap = make(map[string]nametag)
 	fmt.Print("host: ")
 	fmt.Print(daemonUrl)
@@ -99,7 +100,7 @@ func init() {
 	fmt.Print(rwport)
 	fmt.Print("  database: ")
 	fmt.Print(dbname)
-	tagstr =fmt.Sprintf(" binary(%d)",taglen)
+	tagstr = fmt.Sprintf(" binary(%d)", taglen)
 	logFile, err := os.OpenFile(logNameDefault, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println(err)
@@ -107,7 +108,7 @@ func init() {
 	}
 	blmLog = log.New(logFile, "", log.LstdFlags)
 	blmLog.SetPrefix("BLM_TLG")
-	blmLog.SetFlags(log.LstdFlags|log.Lshortfile)
+	blmLog.SetFlags(log.LstdFlags | log.Lshortfile)
 
 }
 
@@ -274,12 +275,14 @@ func ProcessReq(req Metrics) error {
 	return nil
 }
 
-func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List) error {
-	var tbn string
+func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List, db *sql.DB) error {
+	var tbna []string
 
 	for _, v := range m.Tags {
-		tbn = tbn + v
+		tbna = append(tbna, v)
 	}
+	sort.Strings(tbna)
+	tbn := strings.Join(tbna, "") // Go map 遍历结果是随机的，必须排下序
 
 	for k, v := range m.Fields {
 		s := tbn + hostip + k
@@ -307,7 +310,7 @@ func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List) e
 				}
 			}
 			sqlcmd = sqlcmd + "\"" + hostip + "\"," + "\"" + k + "\")\n"
-			execSql(dbn, sqlcmd)
+			execSql(dbn, sqlcmd, db)
 			IsTableCreated.Store(s, true)
 		} else {
 			idx := TAOShashID([]byte(s))
@@ -333,7 +336,11 @@ func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List) e
 }
 
 func ProcessData(ts []metric, dbn string, hostip string) error {
-
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+	if err != nil {
+		blmLog.Fatalf("Open database error: %s\n", err)
+	}
+	defer db.Close()
 	schema, ok := IsSTableCreated.Load(ts[0].Name)
 
 	if !ok {
@@ -358,15 +365,15 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 		sqlcmd = "create table if not exists " + ts[0].Name + " (ts timestamp, value double) tags("
 		sqlcmd1 := "create table if not exists " + ts[0].Name + "_str (ts timestamp, value binary(256)) tags("
 		for e := taglist.Front(); e != nil; e = e.Next() {
-			sqlcmd = sqlcmd + e.Value.(string) + tagstr+","
-			sqlcmd1 = sqlcmd1 + e.Value.(string) + tagstr+","
+			sqlcmd = sqlcmd + e.Value.(string) + tagstr + ","
+			sqlcmd1 = sqlcmd1 + e.Value.(string) + tagstr + ","
 		}
 		sqlcmd = sqlcmd + "srcip binary(20), field binary(40))\n"
 		sqlcmd1 = sqlcmd1 + "srcip binary(20), field binary(40))\n"
-		execSql(dbn, sqlcmd)
-		execSql(dbn, sqlcmd1)
+		execSql(dbn, sqlcmd, db)
+		execSql(dbn, sqlcmd1, db)
 		for i := 0; i < len(ts); i++ {
-			SerilizeTDengine(ts[i], dbn, hostip, taglist)
+			SerilizeTDengine(ts[i], dbn, hostip, taglist, db)
 		}
 
 		return nil
@@ -382,7 +389,7 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 			_, ok := tagmap[k]
 			if !ok {
 				sqlcmd = sqlcmd + "alter table " + ts[0].Name + " add tag " + k + tagstr + "\n"
-				sqlcmd1 = sqlcmd1 + "alter table " + ts[0].Name + "_str add tag " + k + tagstr +"\n"
+				sqlcmd1 = sqlcmd1 + "alter table " + ts[0].Name + "_str add tag " + k + tagstr + "\n"
 				taglist.PushBack(k)
 				tagmap[k] = "y"
 
@@ -390,11 +397,11 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 		}
 
 	}
-	execSql(dbn, sqlcmd)
-	execSql(dbn, sqlcmd1)
+	execSql(dbn, sqlcmd, db)
+	execSql(dbn, sqlcmd1, db)
 
 	for i := 0; i < len(ts); i++ {
-		SerilizeTDengine(ts[i], dbn, hostip, taglist)
+		SerilizeTDengine(ts[i], dbn, hostip, taglist, db)
 	}
 	return nil
 }
@@ -413,16 +420,11 @@ func createDatabase(dbname string) {
 	return
 }
 
-func execSql(dbname string, sqlcmd string) {
+func execSql(dbname string, sqlcmd string, db *sql.DB) {
 	if len(sqlcmd) < 1 {
 		return
 	}
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
-	if err != nil {
-		blmLog.Fatalf("Open database error: %s\n", err)
-	}
-	defer db.Close()
-	_, err = db.Exec(sqlcmd)
+	_, err := db.Exec(sqlcmd)
 	if err != nil {
 		var count int = 2
 		for {

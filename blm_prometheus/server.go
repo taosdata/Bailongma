@@ -182,6 +182,12 @@ func NodeProcess(workerid int) error {
 
 func ProcessReq(req prompb.WriteRequest) error {
 
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+	if err != nil {
+		blmLog.Fatalf("Open database error: %s\n", err)
+	}
+	defer db.Close()
+
 	for _, ts := range req.Timeseries {
 		taglist := list.New()
 		tagmap := make(map[string]string)
@@ -235,8 +241,8 @@ func ProcessReq(req prompb.WriteRequest) error {
 				}
 				sqlcmd = sqlcmd + ")\n"
 				tbn = stbname + tbn
-				execSql(dbname, sqlcmd)
-				SerilizeTDengine(ts, stbname, tbn, taglist, tagmap)
+				execSql(dbname, sqlcmd,db)
+				SerilizeTDengine(ts, stbname, tbn, taglist, tagmap,db)
 			} else {
 				nt := schema.(nametag)
 				tagmp := nt.tagmap
@@ -257,7 +263,7 @@ func ProcessReq(req prompb.WriteRequest) error {
 						}
 						tagmp[k] = s
 
-						execSql(dbname, sqlcmd)
+						execSql(dbname, sqlcmd,db)
 					}
 				}
 
@@ -266,7 +272,7 @@ func ProcessReq(req prompb.WriteRequest) error {
 					tbn = tbn + s
 				}
 				tbn = stbname + tbn
-				SerilizeTDengine(ts, stbname, tbn, taglist, tagmap)
+				SerilizeTDengine(ts, stbname, tbn, taglist, tagmap,db)
 				nt.tagmap = tagmap
 			}
 		} else {
@@ -277,7 +283,7 @@ func ProcessReq(req prompb.WriteRequest) error {
 	return nil
 }
 
-func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *list.List, tagmap map[string]string) error {
+func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *list.List, tagmap map[string]string,db *sql.DB ) error {
 
 	s := "MD5_" + md5V2(tbn)
 	_, ok := IsTableCreated.Load(s)
@@ -304,7 +310,7 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 
 		}
 		sqlcmd = sqlcmd + ")\n"
-		execSql(dbname, sqlcmd)
+		execSql(dbname, sqlcmd,db)
 		IsTableCreated.Store(s, true)
 	} 
 	idx := TAOShashID([]byte(s))
@@ -339,17 +345,12 @@ func createDatabase(dbname string) {
 	return
 }
 
-func execSql(dbname string, sqlcmd string) {
+func execSql(dbname string, sqlcmd string, db *sql.DB ) {
 	if len(sqlcmd) < 1 {
 		return
 	}
 
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
-	if err != nil {
-		blmLog.Fatalf("Open database error: %s\n", err)
-	}
-	defer db.Close()
-	_, err = db.Exec(sqlcmd)
+	_, err := db.Exec(sqlcmd)
 	if err != nil {
 		var count int = 2
 		for {
