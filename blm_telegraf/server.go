@@ -285,7 +285,7 @@ func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List, d
 	tbn := strings.Join(tbna, "") // Go map 遍历结果是随机的，必须排下序
 
 	for k, v := range m.Fields {
-		s := tbn + hostip + k
+		s := m.Name + tbn + hostip + k
 		//fmt.Print(s)
 		s = "MD5_" + md5V2(s)
 		_, ok := IsTableCreated.Load(s)
