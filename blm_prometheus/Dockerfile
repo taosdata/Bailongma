@@ -1,6 +1,6 @@
 ## Builder image
-FROM tdengine/tdengine:latest as builder1
-FROM tdengine/bailongma:latest as builder
+FROM tdengine/tdengine:dev as builder1
+FROM tdengine/bailongma:dev as builder
 
 
 COPY server.go /root/blm_prometheus/
@@ -22,8 +22,8 @@ WORKDIR /root/
 
 # COPY --from=builder /root/build/build/lib/libtaos.so /usr/lib/libtaos.so.1
 # RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
-COPY --from=builder1 /root/taos.h /usr/include/
-COPY --from=builder1 /root/libtaos.so.1 /usr/lib/libtaos.so.1
+COPY --from=builder1 /usr/include/taos.h /usr/include/
+COPY --from=builder1 /usr/lib/libtaos.so.1 /usr/lib/libtaos.so.1
 RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
 
 
@@ -36,6 +36,6 @@ ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en  
 ENV LC_ALL=en_US.UTF-8
 EXPOSE 10203
-VOLUME [ "/var/lib/taos", "/var/log/taos" ]
+VOLUME [ "/var/lib/taos", "/var/log/taos","/etc/taos" ]
 
 ENTRYPOINT  [ "/root/blm_prometheus","--host" ]
