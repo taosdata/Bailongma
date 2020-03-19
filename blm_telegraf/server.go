@@ -90,6 +90,7 @@ func init() {
 	flag.StringVar(&rwport, "port", "10202", "remote write port")
 	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
 	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
+	flag.IntVar(&buffersize, "buffersize", 100, "the buffer size of metrics received")
 
 	flag.Parse()
 	daemonUrl = daemonUrl + ":0"
@@ -152,6 +153,7 @@ func main() {
 		req.HostIP = addr[0]
 
 		nodeChans[idx%httpworkers] <- req
+		w.WriteHeader(http.StatusAccepted)
 	})
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

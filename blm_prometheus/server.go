@@ -259,7 +259,7 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 	var metricsName string
 	var tbn string = ""
 	var nt nametag
-	var annotlen int
+	//var annotlen int
 	//fmt.Println(ts)
 	j := 0
 	for _, l := range ts.Labels {
@@ -318,19 +318,44 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 			}
 			i++
 		}
-		annotlen = taglimit - i*taglen
-		nt.annotlen = annotlen
-		annotationstr := fmt.Sprintf(" binary(%d)", annotlen)
-		sqlcmd = sqlcmd + ", annotation " + annotationstr + ")\n"
+		//annotlen = taglimit - i*taglen
+		//nt.annotlen = annotlen
+		//annotationstr := fmt.Sprintf(" binary(%d)", annotlen)
+		//sqlcmd = sqlcmd + ", annotation " + annotationstr + ")\n"
+		sqlcmd = sqlcmd + ")\n"
 		_, err := execSql(dbname, sqlcmd, db)
 		if err == nil {
 			IsSTableCreated.Store(stbname, nt)
+		} else {
+			blmLog.Println(err)
 		}
 	} else {
 		ntag := schema.(nametag)
 		tbtaglist = ntag.taglist
 		tbtagmap = ntag.tagmap
-		annotlen = ntag.annotlen
+		//	annotlen = ntag.annotlen
+		var sqlcmd string
+		i := 0
+		for _, l := range ts.Labels {
+			k := string(l.Name)
+			if k == "__name__" {
+				continue
+			}
+			i++
+			if i < tagnumlimit {
+				_, ok := tbtagmap[k]
+				if !ok {
+					sqlcmd = "alter table " + stbname + " add tag t_" + k + tagstr + "\n"
+					_, err := execSql(dbname, sqlcmd, db)
+					if err != nil {
+						blmLog.Println(err)
+					} else {
+						tbtaglist.PushBack(k)
+						tbtagmap[k] = "y"
+					}
+				}
+			}
+		}
 	}
 
 	tbnhash := "MD5_" + md5V2(tbn)
@@ -361,18 +386,20 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 			}
 
 		}
-		var annotation string = ""
-		for t := taglist.Front(); t != nil; t = t.Next() {
-			_, has := tbtagmap[t.Value.(string)]
-			if !has {
-				tagvalue, _ := tagmap[t.Value.(string)]
-				annotation += t.Value.(string) + "=" + tagvalue + ","
+		/*
+			var annotation string = ""
+			for t := taglist.Front(); t != nil; t = t.Next() {
+				_, has := tbtagmap[t.Value.(string)]
+				if !has {
+					tagvalue, _ := tagmap[t.Value.(string)]
+					annotation += t.Value.(string) + "=" + tagvalue + ","
+				}
 			}
-		}
-		if len(annotation) > annotlen-2 {
-			annotation = annotation[:annotlen-2]
-		}
-		sqlcmd = sqlcmd + ",\"" + annotation + "\")\n"
+			if len(annotation) > annotlen-2 {
+				annotation = annotation[:annotlen-2]
+			}*/
+		//sqlcmd = sqlcmd + ",\"" + annotation + "\")\n"
+		sqlcmd = sqlcmd + ")\n"
 		_, err := execSql(dbname, sqlcmd, db)
 		if err == nil {
 			IsTableCreated.Store(tbnhash, true)
