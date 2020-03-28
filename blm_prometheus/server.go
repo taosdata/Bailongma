@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,7 +39,8 @@ type nametag struct {
 }
 
 var (
-	daemonUrl   string
+	daemonIP    string
+	daemonName  string
 	httpworkers int
 	sqlworkers  int
 	batchSize   int
@@ -78,7 +80,8 @@ var scratchBufPool = &sync.Pool{
 
 // Parse args:
 func init() {
-	flag.StringVar(&daemonUrl, "host", "127.0.0.1", "TDengine host.")
+	flag.StringVar(&daemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
+	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name.")
 
 	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 1, "Number of parallel http requests handler .")
@@ -93,14 +96,21 @@ func init() {
 	flag.IntVar(&tagnumlimit, "tag-num", 8, "the number of tags in a super table")
 
 	flag.Parse()
-	tdurl = daemonUrl
-	daemonUrl = daemonUrl + ":0"
-	fmt.Print("host: ")
-	fmt.Print(daemonUrl)
-	fmt.Print("  port: ")
-	fmt.Print(rwport)
-	fmt.Print("  database: ")
-	fmt.Print(dbname)
+
+	if daemonName != "" {
+		s, _ := net.LookupIP(daemonName)
+		daemonIP = fmt.Sprintf("%s", s[0])
+
+		fmt.Println(daemonIP)
+		fmt.Println(s[0])
+		daemonIP = daemonIP + ":0"
+
+		tdurl = daemonName
+	} else {
+		tdurl = daemonIP
+		daemonIP = daemonIP + ":0"
+	}
+
 	tagstr = fmt.Sprintf(" binary(%d)", taglen)
 	logFile, err := os.OpenFile(logNameDefault, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -110,6 +120,12 @@ func init() {
 	blmLog = log.New(logFile, "", log.LstdFlags)
 	blmLog.SetPrefix("BLM_PRM")
 	blmLog.SetFlags(log.LstdFlags | log.Lshortfile)
+	blmLog.Printf("host: ip")
+	blmLog.Printf(daemonIP)
+	blmLog.Printf("  port: ")
+	blmLog.Printf(rwport)
+	blmLog.Printf("  database: ")
+	blmLog.Println(dbname)
 
 }
 
@@ -236,7 +252,7 @@ func NodeProcess(workerid int) error {
 }
 
 func ProcessReq(req prompb.WriteRequest) error {
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonIP+")/"+dbname)
 	if err != nil {
 		blmLog.Fatalf("Open database error: %s\n", err)
 	}
@@ -436,7 +452,7 @@ func serilizeTDengine(m prompb.TimeSeries, tbn string, db *sql.DB) error {
 }
 
 func createDatabase(dbname string) {
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/")
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonIP+")/")
 	if err != nil {
 		log.Fatalf("Open database error: %s\n", err)
 	}
@@ -498,14 +514,14 @@ func md5V2(str string) string {
 
 func processBatches(iworker int) {
 	var i int
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonIP+")/"+dbname)
 	if err != nil {
 		blmLog.Printf("processBatches Open database error: %s\n", err)
 		var count int = 5
 		for {
 			if err != nil && count > 0 {
 				<-time.After(time.Second * 1)
-				_, err = sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+				_, err = sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonIP+")/"+dbname)
 				count--
 			} else {
 				if err != nil {
