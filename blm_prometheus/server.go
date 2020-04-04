@@ -7,6 +7,7 @@ import (
 	"container/list"
 	"crypto/md5"
 	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -49,6 +51,7 @@ var (
 	dbuser      string
 	dbpassword  string
 	rwport      string
+	apiport     string
 	debugprt    int
 	taglen      int
 	taglimit    int = 512
@@ -78,11 +81,24 @@ var scratchBufPool = &sync.Pool{
 	},
 }
 
+type FieldDescriptiion struct {
+	fname   string
+	ftype   string
+	flength int
+	fnote   string
+}
+type tableStruct struct {
+	status string
+	head   []string
+	data   []FieldDescriptiion
+	rows   int64
+}
+
 // Parse args:
 func init() {
 	flag.StringVar(&daemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
 	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name.")
-
+	flag.StringVar(&apiport, "tdengine-api-port", "6020", "TDengine restful API port")
 	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 1, "Number of parallel http requests handler .")
 	flag.IntVar(&sqlworkers, "sql-workers", 1, "Number of parallel sql handler.")
@@ -191,15 +207,13 @@ func main() {
 			ntag := schema.(nametag)
 			tbtaglist := ntag.taglist
 			tbtagmap := ntag.tagmap
-			annotlen := ntag.annotlen
+			//annotlen := ntag.annotlen
 			output = "tags: "
 			for e := tbtaglist.Front(); e != nil; e = e.Next() {
 				output = output + e.Value.(string) + " | "
 			}
 			output = output + "\ntagmap: "
 			s := fmt.Sprintln(tbtagmap)
-			output = output + s
-			s = fmt.Sprintf("annotlen: %d", annotlen)
 			output = output + s
 		}
 
@@ -224,12 +238,20 @@ func queryTableStruct(tbname string) string {
 	client := new(http.Client)
 	s := fmt.Sprintf("describe %s.%s", dbname, tbname)
 	body := strings.NewReader(s)
-	req, _ := http.NewRequest("GET", "http://"+tdurl+":6020/rest/sql", body)
+	req, _ := http.NewRequest("GET", "http://"+tdurl+":"+apiport+"/rest/sql", body)
+	//fmt.Println("http://" + tdurl + ":" + apiport + "/rest/sql" + s)
 	req.SetBasicAuth(dbuser, dbpassword)
-	resp, _ := client.Do(req)
-	compressed, _ := ioutil.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	return string(compressed)
+	resp, err := client.Do(req)
+
+	if err != nil {
+		blmLog.Println(err)
+		fmt.Println(err)
+		return ""
+	} else {
+		compressed, _ := ioutil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		return string(compressed)
+	}
 }
 
 func TAOShashID(ba []byte) int {
@@ -288,18 +310,18 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 			continue
 		}
 		j++
-		ln := string(l.Name)
+		ln := strings.ToLower(string(l.Name))
 		taglist.PushBack(ln)
 		s := string(l.Value)
 		tbn += s
 		if j <= tagnum {
-			tbtaglist.PushBack(string(l.Name))
+			tbtaglist.PushBack(ln)
 			if len(s) > taglen {
 				s = s[:taglen]
 			}
-			tbtagmap[l.Name] = "y"
+			tbtagmap[ln] = "y"
 		}
-		tagmap[string(l.Name)] = s
+		tagmap[ln] = s
 	}
 
 	if debugprt == 2 {
@@ -320,29 +342,81 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 	stbname := tablenameEscape(metricsName)
 	var ok bool
 	schema, ok := IsSTableCreated.Load(stbname)
-	if !ok {
+	if !ok { // no local record of super table structure
 		nt.taglist = tbtaglist
 		nt.tagmap = tbtagmap
-		var sqlcmd string
-		sqlcmd = "create table if not exists " + stbname + " (ts timestamp, value double) tags("
-		i := 0
-		for e := tbtaglist.Front(); e != nil; e = e.Next() {
-			if i == 0 {
-				sqlcmd = sqlcmd + "t_" + e.Value.(string) + tagstr
-			} else {
-				sqlcmd = sqlcmd + ",t_" + e.Value.(string) + tagstr
+		stbdescription := queryTableStruct(stbname) //query the super table from TDengine
+		var stbst map[string]interface{}
+		err := json.Unmarshal([]byte(stbdescription), &stbst)
+		if err == nil { //query tdengine table success!
+			status := stbst["status"].(string)
+			if status == "succ" { //yes, the super table was already created in TDengine
+				taostaglist := list.New()
+				taostagmap := make(map[string]string)
+				dt := stbst["data"]
+				for _, fd := range dt.([]interface{}) {
+					fdc := fd.([]interface{})
+					if fdc[3].(string) == "tag" {
+						tmpstr := fdc[0].(string)
+						taostaglist.PushBack(tmpstr[2:])
+						taostagmap[tmpstr[2:]] = "y"
+					}
+				}
+				nt.taglist = taostaglist
+				nt.tagmap = taostagmap
+				tbtaglist = nt.taglist
+				tbtagmap = nt.tagmap
+				//	annotlen = ntag.annotlen
+				var sqlcmd string
+				i := 0
+				for _, l := range ts.Labels {
+					k := strings.ToLower(string(l.Name))
+					if k == "__name__" {
+						continue
+					}
+					i++
+					if i < tagnumlimit {
+						_, ok := tbtagmap[k]
+						if !ok {
+							sqlcmd = "alter table " + stbname + " add tag t_" + k + tagstr + "\n"
+							_, err := execSql(dbname, sqlcmd, db)
+							if err != nil {
+								blmLog.Println(err)
+							}
+							errorcode := fmt.Sprintf("%s", err)
+							if strings.Contains(errorcode, "duplicated column names") {
+								tbtaglist.PushBack(k)
+								tbtagmap[k] = "y"
+							}
+						}
+					}
+				}
+				IsSTableCreated.Store(stbname, nt)
+			} else { // no, the super table haven't been created in TDengine, create it.
+				var sqlcmd string
+				sqlcmd = "create table if not exists " + stbname + " (ts timestamp, value double) tags("
+				i := 0
+				for e := tbtaglist.Front(); e != nil; e = e.Next() {
+					if i == 0 {
+						sqlcmd = sqlcmd + "t_" + e.Value.(string) + tagstr
+					} else {
+						sqlcmd = sqlcmd + ",t_" + e.Value.(string) + tagstr
+					}
+					i++
+				}
+				//annotlen = taglimit - i*taglen
+				//nt.annotlen = annotlen
+				//annotationstr := fmt.Sprintf(" binary(%d)", annotlen)
+				//sqlcmd = sqlcmd + ", annotation " + annotationstr + ")\n"
+				sqlcmd = sqlcmd + ")\n"
+				_, err := execSql(dbname, sqlcmd, db)
+				if err == nil {
+					IsSTableCreated.Store(stbname, nt)
+				} else {
+					blmLog.Println(err)
+				}
 			}
-			i++
-		}
-		//annotlen = taglimit - i*taglen
-		//nt.annotlen = annotlen
-		//annotationstr := fmt.Sprintf(" binary(%d)", annotlen)
-		//sqlcmd = sqlcmd + ", annotation " + annotationstr + ")\n"
-		sqlcmd = sqlcmd + ")\n"
-		_, err := execSql(dbname, sqlcmd, db)
-		if err == nil {
-			IsSTableCreated.Store(stbname, nt)
-		} else {
+		} else { //query TDengine table error
 			blmLog.Println(err)
 		}
 	} else {
@@ -353,7 +427,7 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 		var sqlcmd string
 		i := 0
 		for _, l := range ts.Labels {
-			k := string(l.Name)
+			k := strings.ToLower(string(l.Name))
 			if k == "__name__" {
 				continue
 			}
@@ -365,7 +439,9 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 					_, err := execSql(dbname, sqlcmd, db)
 					if err != nil {
 						blmLog.Println(err)
-					} else {
+					}
+					errorcode := fmt.Sprintf("%s", err)
+					if strings.Contains(errorcode, "duplicated column names") {
 						tbtaglist.PushBack(k)
 						tbtagmap[k] = "y"
 					}
