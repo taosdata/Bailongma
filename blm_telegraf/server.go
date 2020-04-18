@@ -235,6 +235,8 @@ func OrderInsertS(s string, l *list.List) {
 			return
 		}
 	}
+	l.PushBack(s)
+	return
 }
 
 func ProcessReq(req Metrics) error {
