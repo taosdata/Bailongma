@@ -18,6 +18,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -311,11 +312,14 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 		}
 		j++
 		ln := strings.ToLower(string(l.Name))
-		taglist.PushBack(ln)
+		OrderInsertS(ln, taglist)
+		//taglist.PushBack(ln)
 		s := string(l.Value)
 		tbn += s
+		//tagHash += s
 		if j <= tagnum {
-			tbtaglist.PushBack(ln)
+			OrderInsertS(ln, tbtaglist)
+			//tbtaglist.PushBack(ln)
 			if len(s) > taglen {
 				s = s[:taglen]
 			}
@@ -356,7 +360,7 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 				dt := stbst["data"]
 				for _, fd := range dt.([]interface{}) {
 					fdc := fd.([]interface{})
-					if fdc[3].(string) == "tag" {
+					if fdc[3].(string) == "tag" && fdc[0].(string) != "taghash" {
 						tmpstr := fdc[0].(string)
 						taostaglist.PushBack(tmpstr[2:])
 						taostagmap[tmpstr[2:]] = "y"
@@ -382,10 +386,15 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 							_, err := execSql(dbname, sqlcmd, db)
 							if err != nil {
 								blmLog.Println(err)
-							}
-							errorcode := fmt.Sprintf("%s", err)
-							if strings.Contains(errorcode, "duplicated column names") {
+								errorcode := fmt.Sprintf("%s", err)
+								if strings.Contains(errorcode, "duplicated column names") {
+									tbtaglist.PushBack(k)
+									//OrderInsertS(k, tbtaglist)
+									tbtagmap[k] = "y"
+								}
+							} else {
 								tbtaglist.PushBack(k)
+								//OrderInsertS(k, tbtaglist)
 								tbtagmap[k] = "y"
 							}
 						}
@@ -394,15 +403,9 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 				IsSTableCreated.Store(stbname, nt)
 			} else { // no, the super table haven't been created in TDengine, create it.
 				var sqlcmd string
-				sqlcmd = "create table if not exists " + stbname + " (ts timestamp, value double) tags("
-				i := 0
+				sqlcmd = "create table if not exists " + stbname + " (ts timestamp, value double) tags(taghash binary(34)"
 				for e := tbtaglist.Front(); e != nil; e = e.Next() {
-					if i == 0 {
-						sqlcmd = sqlcmd + "t_" + e.Value.(string) + tagstr
-					} else {
-						sqlcmd = sqlcmd + ",t_" + e.Value.(string) + tagstr
-					}
-					i++
+					sqlcmd = sqlcmd + ",t_" + e.Value.(string) + tagstr
 				}
 				//annotlen = taglimit - i*taglen
 				//nt.annotlen = annotlen
@@ -439,10 +442,15 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 					_, err := execSql(dbname, sqlcmd, db)
 					if err != nil {
 						blmLog.Println(err)
-					}
-					errorcode := fmt.Sprintf("%s", err)
-					if strings.Contains(errorcode, "duplicated column names") {
+						errorcode := fmt.Sprintf("%s", err)
+						if strings.Contains(errorcode, "duplicated column names") {
+							tbtaglist.PushBack(k)
+							//OrderInsertS(k, tbtaglist)
+							tbtagmap[k] = "y"
+						}
+					} else {
 						tbtaglist.PushBack(k)
+						//OrderInsertS(k, tbtaglist)
 						tbtagmap[k] = "y"
 					}
 				}
@@ -454,8 +462,9 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 	_, tbcreated := IsTableCreated.Load(tbnhash)
 
 	if !tbcreated {
-		var sqlcmd string
-		sqlcmd = "create table if not exists " + tbnhash + " using " + stbname + " tags("
+		var sqlcmdhead, sqlcmd string
+		sqlcmdhead = "create table if not exists " + tbnhash + " using " + stbname + " tags(\""
+		sqlcmd = ""
 		i := 0
 		for e := tbtaglist.Front(); e != nil; e = e.Next() {
 			tagvalue, has := tagmap[e.Value.(string)]
@@ -491,7 +500,18 @@ func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
 				annotation = annotation[:annotlen-2]
 			}*/
 		//sqlcmd = sqlcmd + ",\"" + annotation + "\")\n"
+		var keys []string
+		var tagHash = ""
+		for t := range tagmap {
+			keys = append(keys, t)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			tagHash += tagmap[k]
+		}
+
 		sqlcmd = sqlcmd + ")\n"
+		sqlcmd = sqlcmdhead + md5V2(tagHash) + "\"," + sqlcmd
 		_, err := execSql(dbname, sqlcmd, db)
 		if err == nil {
 			IsTableCreated.Store(tbnhash, true)
@@ -740,4 +760,41 @@ func TestSerialization() {
 
 	}
 
+}
+
+func TAOSstrCmp(a string, b string) bool {
+	//return if a locates before b in a dictrionary.
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if int(a[i]-'0') > int(b[i]-'0') {
+			return false
+		} else if int(a[i]-'0') < int(b[i]-'0') {
+			return true
+		}
+	}
+	if len(a) > len(b) {
+		return false
+	} else {
+		return true
+	}
+}
+
+func OrderInsertS(s string, l *list.List) {
+	e := l.Front()
+	if e == nil {
+		l.PushFront(s)
+		return
+	}
+
+	for e = l.Front(); e != nil; e = e.Next() {
+		str := e.Value.(string)
+
+		if TAOSstrCmp(str, s) {
+			continue
+		} else {
+			l.InsertBefore(s, e)
+			return
+		}
+	}
+	l.PushBack(s)
+	return
 }
