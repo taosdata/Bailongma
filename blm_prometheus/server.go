@@ -42,21 +42,22 @@ type nametag struct {
 }
 
 var (
-	daemonIP    string
-	daemonName  string
-	httpworkers int
-	sqlworkers  int
-	batchSize   int
-	buffersize  int
-	dbname      string
-	dbuser      string
-	dbpassword  string
-	rwport      string
-	apiport     string
-	debugprt    int
-	taglen      int
-	taglimit    int = 512
-	tagnumlimit int
+	daemonIP      string
+	daemonName    string
+	httpworkers   int
+	sqlworkers    int
+	batchSize     int
+	buffersize    int
+	dbname        string
+	dbuser        string
+	dbpassword    string
+	rwport        string
+	apiport       string
+	debugprt      int
+	taglen        int
+	taglimit      int = 512
+	tagnumlimit   int
+	tablepervnode int
 )
 
 // Global vars
@@ -111,6 +112,7 @@ func init() {
 	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
 	flag.IntVar(&buffersize, "buffersize", 100, "the buffer size of metrics received")
 	flag.IntVar(&tagnumlimit, "tag-num", 8, "the number of tags in a super table")
+	flag.IntVar(&tablepervnode, "table-num", 10000, "the number of tables per TDengine Vnode can create, default 10000")
 
 	flag.Parse()
 
@@ -553,7 +555,7 @@ func createDatabase(dbname string) {
 		log.Fatalf("Open database error: %s\n", err)
 	}
 	defer db.Close()
-	sqlcmd := fmt.Sprintf("create database if not exists %s", dbname)
+	sqlcmd := fmt.Sprintf("create database if not exists %s tables %d", dbname, tablepervnode)
 	_, err = db.Exec(sqlcmd)
 	sqlcmd = fmt.Sprintf("use %s", dbname)
 	_, err = db.Exec(sqlcmd)
