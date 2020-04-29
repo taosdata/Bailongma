@@ -1,4 +1,17 @@
-//TODO add a license
+/*
+ * Copyright (c) 2019 TAOS Data, Inc. <jhtao@taosdata.com>
+ *
+ * This program is free software: you can use, redistribute, and/or modify
+ * it under the terms of the GNU Affero General Public License, version 3
+ * or later ("AGPL"), as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 package main
 
@@ -90,6 +103,7 @@ func init() {
 	flag.StringVar(&rwport, "port", "10202", "remote write port")
 	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
 	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
+	flag.IntVar(&buffersize, "buffersize", 100, "the buffer size of metrics received")
 
 	flag.Parse()
 	daemonUrl = daemonUrl + ":0"
@@ -152,6 +166,7 @@ func main() {
 		req.HostIP = addr[0]
 
 		nodeChans[idx%httpworkers] <- req
+		w.WriteHeader(http.StatusAccepted)
 	})
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -233,6 +248,8 @@ func OrderInsertS(s string, l *list.List) {
 			return
 		}
 	}
+	l.PushBack(s)
+	return
 }
 
 func ProcessReq(req Metrics) error {
@@ -281,7 +298,7 @@ func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List, d
 	for _, v := range m.Tags {
 		tbna = append(tbna, v)
 	}
-	sort.Strings(tbna)
+	sort.Strings())
 	tbn := strings.Join(tbna, "") // Go map 遍历结果是随机的，必须排下序
 
 	for k, v := range m.Fields {

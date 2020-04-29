@@ -1,24 +1,41 @@
-//TODO add a license
+/*
+ * Copyright (c) 2019 TAOS Data, Inc. <jhtao@taosdata.com>
+ *
+ * This program is free software: you can use, redistribute, and/or modify
+ * it under the terms of the GNU Affero General Public License, version 3
+ * or later ("AGPL"), as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 package main
 
 import (
+	"bufio"
 	"container/list"
 	"crypto/md5"
 	"database/sql"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"os"
-	"path/filepath"
-	"bufio"
-	"io"	
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -32,22 +49,28 @@ type Bailongma struct {
 }
 
 type nametag struct {
-	tagmap  map[string]string
-	taglist *list.List
+	tagmap   map[string]string
+	taglist  *list.List
+	annotlen int
 }
 
 var (
-	daemonUrl   string
-	httpworkers int
-	sqlworkers  int
-	batchSize   int
-	buffersize  int
-	dbname      string
-	dbuser      string
-	dbpassword  string
-	rwport      string
-	debugprt    int
-	taglen		int
+	daemonIP      string
+	daemonName    string
+	httpworkers   int
+	sqlworkers    int
+	batchSize     int
+	buffersize    int
+	dbname        string
+	dbuser        string
+	dbpassword    string
+	rwport        string
+	apiport       string
+	debugprt      int
+	taglen        int
+	taglimit      int = 1024
+	tagnumlimit   int
+	tablepervnode int
 )
 
 // Global vars
@@ -63,7 +86,8 @@ var (
 	IsSTableCreated sync.Map
 	IsTableCreated  sync.Map
 	tagstr          string
-	blmLog	       *log.Logger
+	blmLog          *log.Logger
+	tdurl           string
 	logNameDefault  string = "/var/log/taos/blm_prometheus.log"
 )
 var scratchBufPool = &sync.Pool{
@@ -72,10 +96,24 @@ var scratchBufPool = &sync.Pool{
 	},
 }
 
+type FieldDescriptiion struct {
+	fname   string
+	ftype   string
+	flength int
+	fnote   string
+}
+type tableStruct struct {
+	status string
+	head   []string
+	data   []FieldDescriptiion
+	rows   int64
+}
+
 // Parse args:
 func init() {
-	flag.StringVar(&daemonUrl, "host", "127.0.0.1", "TDengine host.")
-
+	flag.StringVar(&daemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
+	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name. in K8S, could be used to lookup TDengine's IP")
+	flag.StringVar(&apiport, "tdengine-api-port", "6020", "TDengine restful API port")
 	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 1, "Number of parallel http requests handler .")
 	flag.IntVar(&sqlworkers, "sql-workers", 1, "Number of parallel sql handler.")
@@ -84,17 +122,28 @@ func init() {
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
 	flag.StringVar(&rwport, "port", "10203", "remote write port")
 	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
-	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
+	flag.IntVar(&taglen, "tag-length", 50, "the max length of tag string,default is 30")
+	flag.IntVar(&buffersize, "buffersize", 100, "the buffer size of metrics received")
+	flag.IntVar(&tagnumlimit, "tag-num", 16, "the number of tags in a super table, default is 8")
+	flag.IntVar(&tablepervnode, "table-num", 10000, "the number of tables per TDengine Vnode can create, default 10000")
 
 	flag.Parse()
-	daemonUrl = daemonUrl + ":0"
-	fmt.Print("host: ")
-	fmt.Print(daemonUrl)
-	fmt.Print("  port: ")
-	fmt.Print(rwport)
-	fmt.Print("  database: ")
-	fmt.Print(dbname)
-	tagstr =fmt.Sprintf(" binary(%d)",taglen)
+
+	if daemonName != "" {
+		s, _ := net.LookupIP(daemonName)
+		daemonIP = fmt.Sprintf("%s", s[0])
+
+		fmt.Println(daemonIP)
+		fmt.Println(s[0])
+		daemonIP = daemonIP + ":0"
+
+		tdurl = daemonName
+	} else {
+		tdurl = daemonIP
+		daemonIP = daemonIP + ":0"
+	}
+
+	tagstr = fmt.Sprintf(" binary(%d)", taglen)
 	logFile, err := os.OpenFile(logNameDefault, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println(err)
@@ -102,7 +151,13 @@ func init() {
 	}
 	blmLog = log.New(logFile, "", log.LstdFlags)
 	blmLog.SetPrefix("BLM_PRM")
-	blmLog.SetFlags(log.LstdFlags|log.Lshortfile)
+	blmLog.SetFlags(log.LstdFlags | log.Lshortfile)
+	blmLog.Printf("host: ip")
+	blmLog.Printf(daemonIP)
+	blmLog.Printf("  port: ")
+	blmLog.Printf(rwport)
+	blmLog.Printf("  database: ")
+	blmLog.Println(dbname)
 
 }
 
@@ -150,6 +205,40 @@ func main() {
 			return
 		}
 		nodeChans[idx%httpworkers] <- req
+		w.WriteHeader(http.StatusAccepted)
+	})
+	http.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
+
+		compressed, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		//blmLog.Println(string(compressed))
+		var output string = ""
+		schema, ok := IsSTableCreated.Load(string(compressed))
+		if !ok {
+			output = "the stable is not created!"
+		} else {
+			ntag := schema.(nametag)
+			tbtaglist := ntag.taglist
+			tbtagmap := ntag.tagmap
+			//annotlen := ntag.annotlen
+			output = "tags: "
+			for e := tbtaglist.Front(); e != nil; e = e.Next() {
+				output = output + e.Value.(string) + " | "
+			}
+			output = output + "\ntagmap: "
+			s := fmt.Sprintln(tbtagmap)
+			output = output + s
+		}
+
+		res := queryTableStruct(string(compressed))
+		output = output + "\nTable structure:\n" + res
+		s := fmt.Sprintf("query result:\n %s\n", output)
+		//blmLog.Println(s)
+		w.Write([]byte(s))
+		w.WriteHeader(http.StatusOK)
 	})
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -159,6 +248,26 @@ func main() {
 	}
 	blmLog.Fatal(http.ListenAndServe(":"+rwport, nil))
 
+}
+
+func queryTableStruct(tbname string) string {
+	client := new(http.Client)
+	s := fmt.Sprintf("describe %s.%s", dbname, tbname)
+	body := strings.NewReader(s)
+	req, _ := http.NewRequest("GET", "http://"+tdurl+":"+apiport+"/rest/sql", body)
+	//fmt.Println("http://" + tdurl + ":" + apiport + "/rest/sql" + s)
+	req.SetBasicAuth(dbuser, dbpassword)
+	resp, err := client.Do(req)
+
+	if err != nil {
+		blmLog.Println(err)
+		fmt.Println(err)
+		return ""
+	} else {
+		compressed, _ := ioutil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		return string(compressed)
+	}
 }
 
 func TAOShashID(ba []byte) int {
@@ -181,118 +290,202 @@ func NodeProcess(workerid int) error {
 }
 
 func ProcessReq(req prompb.WriteRequest) error {
-
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonIP+")/"+dbname)
 	if err != nil {
 		blmLog.Fatalf("Open database error: %s\n", err)
 	}
 	defer db.Close()
 
 	for _, ts := range req.Timeseries {
-		taglist := list.New()
-		tagmap := make(map[string]string)
-		m := make(model.Metric, len(ts.Labels))
-		var tbn string = ""
-		//fmt.Println(ts)
-		for _, l := range ts.Labels {
-			m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+		err = HandleStable(ts, db)
+	}
+	return err
+}
 
-			if string(l.Name) == "__name__" {
-				continue
-			}
+func HandleStable(ts prompb.TimeSeries, db *sql.DB) error {
+	taglist := list.New()
+	tbtaglist := list.New()
+	tagmap := make(map[string]string)
+	tbtagmap := make(map[string]string)
+	m := make(model.Metric, len(ts.Labels))
+	tagnum := tagnumlimit
+	var hasName bool = false
+	var metricsName string
+	var tbn string = ""
+	var nt nametag
+	//var annotlen int
+	//fmt.Println(ts)
+	j := 0
+	for _, l := range ts.Labels {
+		m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 
-			taglist.PushBack(string(l.Name))
-			s:=string(l.Value)
-			if len(s)>taglen {
+		if string(l.Name) == "__name__" {
+			metricsName = string(l.Value)
+			tbn += metricsName
+			hasName = true
+			continue
+		}
+		j++
+		ln := strings.ToLower(string(l.Name))
+		OrderInsertS(ln, taglist)
+		//taglist.PushBack(ln)
+		s := string(l.Value)
+		tbn += s
+		//tagHash += s
+		if j <= tagnum {
+			OrderInsertS(ln, tbtaglist)
+			//tbtaglist.PushBack(ln)
+			if len(s) > taglen {
 				s = s[:taglen]
 			}
-			tagmap[string(l.Name)] = s
+			tbtagmap[ln] = "y"
 		}
-		if debugprt == 2 {
-			blmLog.Printf(" Ts: %d, value: %f, ",ts.Samples[0].Timestamp,ts.Samples[0].Value)
-			blmLog.Println(m)
-		}
-		metricName, hasName := m["__name__"]
-		if hasName {
-			stbname := string(metricName)
-			if len(stbname) > 60 {
-				//stbname = "md5_"+md5V2(stbname)
-				stbname = stbname[:60]
-			}
-			schema, ok := IsSTableCreated.Load(stbname)
-			if !ok {
-				var nt nametag
+		tagmap[ln] = s
+	}
 
-				nt.taglist = taglist
-				nt.tagmap = tagmap
-				IsSTableCreated.Store(stbname, nt)
-				var sqlcmd string
-				sqlcmd = "create table if not exists " + stbname + " (ts timestamp, value double) tags("
-				i := 0
-				for e := taglist.Front(); e != nil; e = e.Next() {
-					if i == 0 {
-						sqlcmd = sqlcmd + "t_" + e.Value.(string) + tagstr
-					} else {
-						sqlcmd = sqlcmd + ",t_" + e.Value.(string) + tagstr
+	if debugprt == 2 {
+		t := ts.Samples[0].Timestamp
+		var ns int64 = 0
+		if t/1000000000 > 10 {
+			tm := t / 1000
+			ns = t - tm*1000
+		}
+		blmLog.Printf(" Ts: %s, value: %f, ", time.Unix(t/1000, ns), ts.Samples[0].Value)
+		blmLog.Println(ts)
+	}
+
+	if !hasName {
+		info := fmt.Sprintf("no name metric")
+		panic(info)
+	}
+	stbname := tablenameEscape(metricsName)
+	var ok bool
+	schema, ok := IsSTableCreated.Load(stbname)
+	if !ok { // no local record of super table structure
+		nt.taglist = tbtaglist
+		nt.tagmap = tbtagmap
+		stbdescription := queryTableStruct(stbname) //query the super table from TDengine
+		var stbst map[string]interface{}
+		err := json.Unmarshal([]byte(stbdescription), &stbst)
+		if err == nil { //query tdengine table success!
+			status := stbst["status"].(string)
+			if status == "succ" { //yes, the super table was already created in TDengine
+				taostaglist := list.New()
+				taostagmap := make(map[string]string)
+				dt := stbst["data"]
+				for _, fd := range dt.([]interface{}) {
+					fdc := fd.([]interface{})
+					if fdc[3].(string) == "tag" && fdc[0].(string) != "taghash" {
+						tmpstr := fdc[0].(string)
+						taostaglist.PushBack(tmpstr[2:])
+						taostagmap[tmpstr[2:]] = "y"
 					}
-					i++
-					s, _ := tagmap[e.Value.(string)]
-					tbn = tbn + s
 				}
-				sqlcmd = sqlcmd + ")\n"
-				tbn = stbname + tbn
-				execSql(dbname, sqlcmd,db)
-				SerilizeTDengine(ts, stbname, tbn, taglist, tagmap,db)
-			} else {
-				nt := schema.(nametag)
-				tagmp := nt.tagmap
-				taglist = nt.taglist
+				nt.taglist = taostaglist
+				nt.tagmap = taostagmap
+				tbtaglist = nt.taglist
+				tbtagmap = nt.tagmap
+				//	annotlen = ntag.annotlen
 				var sqlcmd string
+				i := 0
 				for _, l := range ts.Labels {
-					k := string(l.Name)
+					k := strings.ToLower(string(l.Name))
 					if k == "__name__" {
 						continue
 					}
-					_, ok := tagmp[k]
-					if !ok {
-						sqlcmd = "alter table " + stbname + " add tag t_" + k + tagstr+"\n"
-						taglist.PushBack(k)
-						s:= string(l.Value)
-						if len(s) > taglen {
-							s = s[:taglen]
+					i++
+					if i < tagnumlimit {
+						_, ok := tbtagmap[k]
+						if !ok {
+							sqlcmd = "alter table " + stbname + " add tag t_" + k + tagstr + "\n"
+							_, err := execSql(dbname, sqlcmd, db)
+							if err != nil {
+								blmLog.Println(err)
+								errorcode := fmt.Sprintf("%s", err)
+								if strings.Contains(errorcode, "duplicated column names") {
+									tbtaglist.PushBack(k)
+									//OrderInsertS(k, tbtaglist)
+									tbtagmap[k] = "y"
+								}
+							} else {
+								tbtaglist.PushBack(k)
+								//OrderInsertS(k, tbtaglist)
+								tbtagmap[k] = "y"
+							}
 						}
-						tagmp[k] = s
-
-						execSql(dbname, sqlcmd,db)
 					}
 				}
-
-				for e := taglist.Front(); e != nil; e = e.Next() {
-					s, _ := tagmap[e.Value.(string)]
-					tbn = tbn + s
+				IsSTableCreated.Store(stbname, nt)
+			} else { // no, the super table haven't been created in TDengine, create it.
+				var sqlcmd string
+				sqlcmd = "create table if not exists " + stbname + " (ts timestamp, value double) tags(taghash binary(34)"
+				for e := tbtaglist.Front(); e != nil; e = e.Next() {
+					sqlcmd = sqlcmd + ",t_" + e.Value.(string) + tagstr
 				}
-				tbn = stbname + tbn
-				SerilizeTDengine(ts, stbname, tbn, taglist, tagmap,db)
-				nt.tagmap = tagmap
+				//annotlen = taglimit - i*taglen
+				//nt.annotlen = annotlen
+				//annotationstr := fmt.Sprintf(" binary(%d)", annotlen)
+				//sqlcmd = sqlcmd + ", annotation " + annotationstr + ")\n"
+				sqlcmd = sqlcmd + ")\n"
+				_, err := execSql(dbname, sqlcmd, db)
+				if err == nil {
+					IsSTableCreated.Store(stbname, nt)
+				} else {
+					blmLog.Println(err)
+				}
 			}
-		} else {
-			info := fmt.Sprintf("no name metric")
-			panic(info)
+		} else { //query TDengine table error
+			blmLog.Println(err)
+		}
+	} else {
+		ntag := schema.(nametag)
+		tbtaglist = ntag.taglist
+		tbtagmap = ntag.tagmap
+		//	annotlen = ntag.annotlen
+		var sqlcmd string
+		i := 0
+		for _, l := range ts.Labels {
+			k := strings.ToLower(string(l.Name))
+			if k == "__name__" {
+				continue
+			}
+			i++
+			if i < tagnumlimit {
+				_, ok := tbtagmap[k]
+				if !ok {
+					sqlcmd = "alter table " + stbname + " add tag t_" + k + tagstr + "\n"
+					_, err := execSql(dbname, sqlcmd, db)
+					if err != nil {
+						blmLog.Println(err)
+						errorcode := fmt.Sprintf("%s", err)
+						if strings.Contains(errorcode, "duplicated column names") {
+							tbtaglist.PushBack(k)
+							//OrderInsertS(k, tbtaglist)
+							tbtagmap[k] = "y"
+						}
+					} else {
+						tbtaglist.PushBack(k)
+						//OrderInsertS(k, tbtaglist)
+						tbtagmap[k] = "y"
+					}
+				}
+			}
 		}
 	}
-	return nil
-}
 
-func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *list.List, tagmap map[string]string,db *sql.DB ) error {
+	tbnhash := "MD5_" + md5V2(tbn)
+	_, tbcreated := IsTableCreated.Load(tbnhash)
 
-	s := "MD5_" + md5V2(tbn)
-	_, ok := IsTableCreated.Load(s)
-	if !ok {
-		var sqlcmd string
-		sqlcmd = "create table if not exists " + s + " using " + stbname + " tags("
+	if !tbcreated {
+		var sqlcmdhead, sqlcmd string
+		sqlcmdhead = "create table if not exists " + tbnhash + " using " + stbname + " tags(\""
+		sqlcmd = ""
 		i := 0
-		for e := taglist.Front(); e != nil; e = e.Next() {
+		for e := tbtaglist.Front(); e != nil; e = e.Next() {
 			tagvalue, has := tagmap[e.Value.(string)]
+			if len(tagvalue) > taglen {
+				tagvalue = tagvalue[:taglen]
+			}
 			if i == 0 {
 				if has {
 					sqlcmd = sqlcmd + "\"" + tagvalue + "\""
@@ -309,12 +502,53 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 			}
 
 		}
+		/*
+			var annotation string = ""
+			for t := taglist.Front(); t != nil; t = t.Next() {
+				_, has := tbtagmap[t.Value.(string)]
+				if !has {
+					tagvalue, _ := tagmap[t.Value.(string)]
+					annotation += t.Value.(string) + "=" + tagvalue + ","
+				}
+			}
+			if len(annotation) > annotlen-2 {
+				annotation = annotation[:annotlen-2]
+			}*/
+		//sqlcmd = sqlcmd + ",\"" + annotation + "\")\n"
+		var keys []string
+		var tagHash = ""
+		for t := range tagmap {
+			keys = append(keys, t)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			tagHash += tagmap[k]
+		}
+
 		sqlcmd = sqlcmd + ")\n"
-		execSql(dbname, sqlcmd,db)
-		IsTableCreated.Store(s, true)
-	} 
-	idx := TAOShashID([]byte(s))
-	sqlcmd := " " + s + " values("
+		sqlcmd = sqlcmdhead + md5V2(tagHash) + "\"," + sqlcmd
+		_, err := execSql(dbname, sqlcmd, db)
+		if err == nil {
+			IsTableCreated.Store(tbnhash, true)
+		}
+	}
+	serilizeTDengine(ts, tbnhash, db)
+	return nil
+}
+
+func tablenameEscape(mn string) string {
+	stbb := strings.ReplaceAll(mn, ":", "_") // replace : in the metrics name to adapt the TDengine
+	stbc := strings.ReplaceAll(stbb, ".", "_")
+	stbname := strings.ReplaceAll(stbc, "-", "_")
+	if len(stbname) > 60 {
+		stbname = stbname[:60]
+	}
+	return stbname
+}
+
+func serilizeTDengine(m prompb.TimeSeries, tbn string, db *sql.DB) error {
+	idx := TAOShashID([]byte(tbn))
+	sqlcmd := " " + tbn + " values("
 	vl := m.Samples[0].GetValue()
 	vls := strconv.FormatFloat(vl, 'E', -1, 64)
 
@@ -324,20 +558,17 @@ func SerilizeTDengine(m prompb.TimeSeries, stbname string, tbn string, taglist *
 	tl := m.Samples[0].GetTimestamp()
 	tls := strconv.FormatInt(tl, 10)
 	sqlcmd = sqlcmd + tls + "," + vls + ")\n"
-//	execSql(dbname,sqlcmd)
 	batchChans[idx%sqlworkers] <- sqlcmd
-//	blmLog.Println(idx%sqlworkers," ",sqlcmd)
-	//sqlcmd = ""
 	return nil
 }
 
 func createDatabase(dbname string) {
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/")
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonIP+")/")
 	if err != nil {
 		log.Fatalf("Open database error: %s\n", err)
 	}
 	defer db.Close()
-	sqlcmd := fmt.Sprintf("create database if not exists %s", dbname)
+	sqlcmd := fmt.Sprintf("create database if not exists %s tables %d", dbname, tablepervnode)
 	_, err = db.Exec(sqlcmd)
 	sqlcmd = fmt.Sprintf("use %s", dbname)
 	_, err = db.Exec(sqlcmd)
@@ -345,30 +576,19 @@ func createDatabase(dbname string) {
 	return
 }
 
-func execSql(dbname string, sqlcmd string, db *sql.DB ) {
+func execSql(dbname string, sqlcmd string, db *sql.DB) (sql.Result, error) {
 	if len(sqlcmd) < 1 {
-		return
+		return nil, nil
 	}
-
-	_, err := db.Exec(sqlcmd)
+	if debugprt == 2 {
+		blmLog.Println(sqlcmd)
+	}
+	res, err := db.Exec(sqlcmd)
 	if err != nil {
-		var count int = 2
-		for {
-			if err != nil && count > 0 {
-				<-time.After(time.Second * 1)
-				_, err = db.Exec(sqlcmd)
-				count--
-			} else {
-				if err != nil {
-					blmLog.Printf("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
-					return
-				}
-				break
-			}
+		blmLog.Printf("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
 
-		}
 	}
-	return
+	return res, err
 }
 
 func checkErr(err error) {
@@ -386,14 +606,14 @@ func md5V2(str string) string {
 
 func processBatches(iworker int) {
 	var i int
-	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonIP+")/"+dbname)
 	if err != nil {
 		blmLog.Printf("processBatches Open database error: %s\n", err)
 		var count int = 5
 		for {
 			if err != nil && count > 0 {
 				<-time.After(time.Second * 1)
-				_, err = sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
+				_, err = sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonIP+")/"+dbname)
 				count--
 			} else {
 				if err != nil {
@@ -418,7 +638,7 @@ func processBatches(iworker int) {
 			//blmLog.Printf(strings.Join(sqlcmd, ""))
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
-				blmLog.Printf("processBatches error %s",err)
+				blmLog.Printf("processBatches error %s", err)
 				var count int = 2
 				for {
 					if err != nil && count > 0 {
@@ -438,7 +658,7 @@ func processBatches(iworker int) {
 	}
 	if i > 1 {
 		i = 1
-//		blmLog.Printf(strings.Join(sqlcmd, ""))
+		//		blmLog.Printf(strings.Join(sqlcmd, ""))
 		_, err := db.Exec(strings.Join(sqlcmd, ""))
 		if err != nil {
 			var count int = 2
@@ -473,15 +693,15 @@ func TestSerialization() {
 		os.Exit(1)
 	}
 	promPath = filepath.Join(promPath, "testData/blm_prometheus.log")
-	testfile,err := os.OpenFile(promPath,os.O_RDWR,0666)
+	testfile, err := os.OpenFile(promPath, os.O_RDWR, 0666)
 	if err != nil {
-        fmt.Println("Open file error!", err)
-        return
+		fmt.Println("Open file error!", err)
+		return
 	}
 	defer testfile.Close()
 	fmt.Println(promPath)
 	buf := bufio.NewReader(testfile)
-	i :=0
+	i := 0
 	lasttime := "20:40:20"
 	for {
 		line, err := buf.ReadString('\n')
@@ -490,56 +710,87 @@ func TestSerialization() {
 				fmt.Println("File read ok! line:", i)
 				break
 			} else {
-				fmt.Println("Read file error!",err)
-				return 
+				fmt.Println("Read file error!", err)
+				return
 			}
 		}
-		sa := strings.Split(line," ")
+		sa := strings.Split(line, " ")
 
-		if strings.Contains(line,"server.go:201:")  {
+		if strings.Contains(line, "server.go:201:") {
 			if sa[3] != lasttime {
-				nodeChans[0]<-req
+				nodeChans[0] <- req
 				lasttime = sa[3]
 				req.Timeseries = req.Timeseries[:0]
 				ts = ts[:0]
-			}			
-			tse.Samples = make([]prompb.Sample,0)
-			T, _ := strconv.ParseInt(sa[7][:(len(sa[7])-1)],10,64)
-			V,_  := strconv.ParseFloat(sa[9][:(len(sa[9])-1)],64)
-			sample = &prompb.Sample{
-				Value: V,
-				Timestamp: T, 
 			}
-			tse.Samples = append(tse.Samples,*sample)
-		}else if strings.Contains(line,"server.go:202:") {
-			lbs = make([]prompb.Label,0)
-			lb := strings.Split(line[45:],"{")
+			tse.Samples = make([]prompb.Sample, 0)
+			T, _ := strconv.ParseInt(sa[7][:(len(sa[7])-1)], 10, 64)
+			V, _ := strconv.ParseFloat(sa[9][:(len(sa[9])-1)], 64)
+			sample = &prompb.Sample{
+				Value:     V,
+				Timestamp: T,
+			}
+			tse.Samples = append(tse.Samples, *sample)
+		} else if strings.Contains(line, "server.go:202:") {
+			lbs = make([]prompb.Label, 0)
+			lb := strings.Split(line[45:], "{")
 			label.Name = "__name__"
 			label.Value = lb[0]
-			lbs = append(lbs,label)
-			lbc := strings.Split(lb[1][:len(lb[1])-1],", ")
-			for i = 0;i<len(lbc);i++ {
-				content := strings.Split(lbc[i],"=\"")
-				label.Name = content[0]							
-				if (i == len(lbc)-1){
-					label.Value = content[1][:len(content[1])-2]	
-				}else {
+			lbs = append(lbs, label)
+			lbc := strings.Split(lb[1][:len(lb[1])-1], ", ")
+			for i = 0; i < len(lbc); i++ {
+				content := strings.Split(lbc[i], "=\"")
+				label.Name = content[0]
+				if i == len(lbc)-1 {
+					label.Value = content[1][:len(content[1])-2]
+				} else {
 
 					label.Value = content[1][:len(content[1])-1]
 				}
-				lbs = append(lbs,label)
+				lbs = append(lbs, label)
 			}
 			tse.Labels = lbs
-			ts = append(ts,tse)
-			req.Timeseries =  ts
+			ts = append(ts, tse)
+			req.Timeseries = ts
 		}
-		
 
-		
-		
-
-
-		
 	}
 
+}
+
+func TAOSstrCmp(a string, b string) bool {
+	//return if a locates before b in a dictrionary.
+	for i := 0; i < len(a) && i < len(b); i++ {
+		if int(a[i]-'0') > int(b[i]-'0') {
+			return false
+		} else if int(a[i]-'0') < int(b[i]-'0') {
+			return true
+		}
+	}
+	if len(a) > len(b) {
+		return false
+	} else {
+		return true
+	}
+}
+
+func OrderInsertS(s string, l *list.List) {
+	e := l.Front()
+	if e == nil {
+		l.PushFront(s)
+		return
+	}
+
+	for e = l.Front(); e != nil; e = e.Next() {
+		str := e.Value.(string)
+
+		if TAOSstrCmp(str, s) {
+			continue
+		} else {
+			l.InsertBefore(s, e)
+			return
+		}
+	}
+	l.PushBack(s)
+	return
 }
