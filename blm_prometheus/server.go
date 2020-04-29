@@ -1,4 +1,17 @@
-//TODO add a license
+/*
+ * Copyright (c) 2019 TAOS Data, Inc. <jhtao@taosdata.com>
+ *
+ * This program is free software: you can use, redistribute, and/or modify
+ * it under the terms of the GNU Affero General Public License, version 3
+ * or later ("AGPL"), as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 package main
 
@@ -55,7 +68,7 @@ var (
 	apiport       string
 	debugprt      int
 	taglen        int
-	taglimit      int = 512
+	taglimit      int = 1024
 	tagnumlimit   int
 	tablepervnode int
 )
@@ -99,7 +112,7 @@ type tableStruct struct {
 // Parse args:
 func init() {
 	flag.StringVar(&daemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
-	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name.")
+	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name. in K8S, could be used to lookup TDengine's IP")
 	flag.StringVar(&apiport, "tdengine-api-port", "6020", "TDengine restful API port")
 	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 1, "Number of parallel http requests handler .")
@@ -109,9 +122,9 @@ func init() {
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
 	flag.StringVar(&rwport, "port", "10203", "remote write port")
 	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
-	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
+	flag.IntVar(&taglen, "tag-length", 50, "the max length of tag string,default is 30")
 	flag.IntVar(&buffersize, "buffersize", 100, "the buffer size of metrics received")
-	flag.IntVar(&tagnumlimit, "tag-num", 8, "the number of tags in a super table")
+	flag.IntVar(&tagnumlimit, "tag-num", 16, "the number of tags in a super table, default is 8")
 	flag.IntVar(&tablepervnode, "table-num", 10000, "the number of tables per TDengine Vnode can create, default 10000")
 
 	flag.Parse()
@@ -575,25 +588,6 @@ func execSql(dbname string, sqlcmd string, db *sql.DB) (sql.Result, error) {
 		blmLog.Printf("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
 
 	}
-	/*
-		if err != nil {
-			var count int = 2
-			for {
-				if err != nil && count > 0 {
-					<-time.After(time.Second * 1)
-					_, err = db.Exec(sqlcmd)
-					count--
-				} else {
-					if err != nil {
-						blmLog.Printf("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
-						return
-					}
-					break
-				}
-
-			}
-		}
-	*/
 	return res, err
 }
 

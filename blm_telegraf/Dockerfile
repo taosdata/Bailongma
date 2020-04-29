@@ -1,6 +1,6 @@
 ## Builder image
-FROM tdengine/tdengine:latest as builder1
-FROM tdengine/bailongma:latest as builder
+FROM tdengine/tdengine:dev as builder1
+FROM tdengine/bailongma:dev as builder
 
 
 COPY server.go /root/blm_telegraf/
@@ -21,9 +21,9 @@ WORKDIR /root
 
 # COPY --from=builder /root/build/build/lib/libtaos.so /usr/lib/libtaos.so.1
 # RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
-COPY --from=builder1 /root/taos.h /usr/include/
-COPY --from=builder1 /root/libtaos.so.1 /usr/lib/libtaos.so.1
-RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
+COPY --from=builder1 /usr/include/taos.h /usr/include/
+COPY --from=builder1 /usr/lib/libtaos.so /usr/lib/libtaos.so
+RUN ln -s /usr/lib/libtaos.so /usr/lib/libtaos.so.1
 
 
 COPY --from=builder /root/blm_telegraf/blm_telegraf .

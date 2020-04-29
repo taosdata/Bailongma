@@ -38,4 +38,4 @@ ENV LC_ALL=en_US.UTF-8
 EXPOSE 10203
 VOLUME [ "/var/lib/taos", "/var/log/taos","/etc/taos" ]
 
-ENTRYPOINT  [ "/root/blm_prometheus","--host" ]
+ENTRYPOINT  [ "/root/blm_prometheus" ]

@@ -27,16 +27,22 @@ After successful build, there will be a blm_prometheus in the same directory.
 Using following command to run the program in background
 
 ```
-nohup ./blm_prometheus --host 112.102.3.69:0 --batch-size 80 --http-workers 2 --sql-workers 2 --dbname prometheus --port 1234 > /dev/null 2>&1 &
+nohup ./blm_prometheus --tdengine-ip 112.102.3.69 --batch-size 80 --http-workers 2 --sql-workers 2 --dbname prometheus --port 1234 > /dev/null 2>&1 &
 ```
 There are several options can be set:
 
 ```sh
---host 
-set the host of TDengine, IP:port, for example "192.168.0.1:0"
+--tdengine-ip 
+set the IP of TDengine for example "192.168.0.1"
+
+--tdengine-name
+set the domain name of TDengine, then blm-prometheus can lookup the ip address of TDengine. 
+
+--tdengine-api-port
+set the restful API port of TDengine. blm-prometheus will query the table schema info from TDengine to keep meta info synchronized. Default is 6020
 
 --batch-size 
-set the size of how many records in one SQL cmd line writing into TDengine. There is a limitation that TDengine could only accept SQL line small than 64000 bytes, so usually the batch size should not exceed 200. Default is 10.
+set the size of how many records in one SQL cmd line writing into TDengine. There is a limitation that TDengine could only accept SQL line small than 64000 bytes, so usually the batch size should not exceed 200. Default is 100.
 
 --http-workers
 set the number of workers who process the HTTP request. default is 10
@@ -54,7 +60,9 @@ set the user name that have the right to access the TDengine. default is "root"
 set the password of dbuser. default is "taosdata"
 
 --port
-set the port that prometheus configuration remote_write. as showed above, in the prometheus.yaml
+set the port that prometheus configuration remote_write. as showed above, in the prometheus.yaml. default is 10203
+
+
 
 ```
 
