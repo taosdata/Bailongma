@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/taosdata/TDengine/src/connector/go/src/taosSql"
+	_ "github.com/taosdata/driver-go/taosSql"
 )
 
 type metric struct {
@@ -68,11 +68,11 @@ type nametag struct {
 
 // Global vars
 var (
-	bufPool         sync.Pool
-	batchChans      []chan string  //multi table one chan
-	nodeChans       []chan Metrics //multi node one chan
-	inputDone       chan struct{}
-	workersGroup    sync.WaitGroup
+	bufPool    sync.Pool
+	batchChans []chan string  //multi table one chan
+	nodeChans  []chan Metrics //multi node one chan
+	inputDone  chan struct{}
+	//workersGroup    sync.WaitGroup
 	reportTags      [][2]string
 	reportHostname  string
 	taosDriverName  string = "taosSql"
@@ -135,7 +135,7 @@ func main() {
 	createDatabase(dbname)
 
 	for i := 0; i < httpworkers; i++ {
-		workersGroup.Add(1)
+		//workersGroup.Add(1)
 		go NodeProcess(i)
 	}
 
@@ -144,11 +144,12 @@ func main() {
 	}
 
 	for i := 0; i < sqlworkers; i++ {
-		workersGroup.Add(1)
+		//workersGroup.Add(1)
 		go processBatches(i)
 	}
 
 	http.HandleFunc("/telegraf", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
 		addr := strings.Split(r.RemoteAddr, ":")
 		idx := TAOShashID([]byte(addr[0]))
 
@@ -157,7 +158,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
+		r.Body.Close()
 		var req Metrics
 		if err := json.Unmarshal(reqBuf, &req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -166,7 +167,7 @@ func main() {
 		req.HostIP = addr[0]
 
 		nodeChans[idx%httpworkers] <- req
-		w.WriteHeader(http.StatusAccepted)
+
 	})
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -298,7 +299,7 @@ func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List, d
 	for _, v := range m.Tags {
 		tbna = append(tbna, v)
 	}
-	sort.Strings())
+	sort.Strings(tbna)
 	tbn := strings.Join(tbna, "") // Go map 遍历结果是随机的，必须排下序
 
 	for k, v := range m.Fields {
@@ -329,25 +330,23 @@ func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List, d
 			sqlcmd = sqlcmd + "\"" + hostip + "\"," + "\"" + k + "\")\n"
 			execSql(dbn, sqlcmd, db)
 			IsTableCreated.Store(s, true)
-		} else {
-			idx := TAOShashID([]byte(s))
-			sqlcmd := " " + s + " values("
-
-			tls := strconv.FormatInt(m.TimeStamp, 10)
-			switch v.(type) {
-			case string:
-				sqlcmd = sqlcmd + tls + ",\"" + v.(string) + "\")"
-			case int64:
-				sqlcmd = sqlcmd + tls + "," + strconv.FormatInt(v.(int64), 10) + ")"
-			case float64:
-				sqlcmd = sqlcmd + tls + "," + strconv.FormatFloat(v.(float64), 'E', -1, 64) + ")"
-			default:
-				panic("Checktable error value type")
-			}
-			batchChans[idx%sqlworkers] <- sqlcmd
-			//execSql(dbn,sqlcmd)
 		}
+		idx := TAOShashID([]byte(s))
+		sqlcmd := " " + s + " values("
 
+		tls := strconv.FormatInt(m.TimeStamp, 10)
+		switch v.(type) {
+		case string:
+			sqlcmd = sqlcmd + tls + ",\"" + v.(string) + "\")"
+		case int64:
+			sqlcmd = sqlcmd + tls + "," + strconv.FormatInt(v.(int64), 10) + ")"
+		case float64:
+			sqlcmd = sqlcmd + tls + "," + strconv.FormatFloat(v.(float64), 'E', -1, 64) + ")"
+		default:
+			panic("Checktable error value type")
+		}
+		batchChans[idx%sqlworkers] <- sqlcmd
+		//execSql(dbn,sqlcmd)
 	}
 	return nil
 }
@@ -546,5 +545,5 @@ func processBatches(iworker int) {
 		}
 	}
 
-	workersGroup.Done()
+	//workersGroup.Done()
 }
