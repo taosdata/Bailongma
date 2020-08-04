@@ -1,32 +1,14 @@
 ## Builder image
-FROM tdengine/tdengine:dev as builder1
-FROM tdengine/bailongma:dev as builder
+FROM bailongma:latest as builder
+FROM tdengine/tdengine:latest 
 
 
-COPY server.go /root/blm_telegraf/
-
-WORKDIR /root/blm_telegraf
-
-
-RUN go build
-# # build community version
-# RUN cmake .. -DVERSION=lite && cmake --build .
-
-## Target image
-
-
-FROM centos:7
-
-WORKDIR /root
+WORKDIR /root/
 
 # COPY --from=builder /root/build/build/lib/libtaos.so /usr/lib/libtaos.so.1
 # RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
-COPY --from=builder1 /usr/include/taos.h /usr/include/
-COPY --from=builder1 /usr/lib/libtaos.so /usr/lib/libtaos.so
-RUN ln -s /usr/lib/libtaos.so /usr/lib/libtaos.so.1
 
-
-COPY --from=builder /root/blm_telegraf/blm_telegraf .
+COPY --from=builder /root/blm_telegraf /root/
 
 #COPY community/packaging/cfg/taos.cfg /etc/taos/
 
@@ -35,6 +17,8 @@ ENV LANG=en_US.UTF-8
 ENV LANGUAGE=en_US:en  
 ENV LC_ALL=en_US.UTF-8
 EXPOSE 10202
-VOLUME [ "/var/lib/taos", "/var/log/taos" ]
+EXPOSE 6030 6031 6032 6033 6034 6035 6036 6037 6038 6039 6040 6041
 
-ENTRYPOINT [ "/root/blm_telegraf","--host" ]
+VOLUME [ "/var/lib/taos", "/var/log/taos","/etc/taos" ]
+
+ENTRYPOINT  [ "/root/blm_telegraf" ]

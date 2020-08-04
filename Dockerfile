@@ -1,6 +1,7 @@
 ## Builder image
-FROM tdengine/tdengine:dev as builder1
-FROM golang:latest 
+#FROM tdengine/tdengine:dev as builder1
+FROM golang:latest as builder
+#FROM tdengine/tdengine:2.0.0.0 as builder1
 
 
 
@@ -8,25 +9,31 @@ WORKDIR /root
 
 #COPY --from=builder1 /usr/include/taos.h /usr/include/
 #COPY --from=builder1 /usr/lib/libtaos.so /usr/lib/libtaos.so
-COPY --from=builder1 /usr/include/taos.h /usr/include/
-COPY --from=builder1 /usr/lib/libtaos.so.1 /usr/lib/
-RUN mkdir /usr/lib/ld
+#COPY --from=builder1 /usr/include/taos.h /usr/include/
+#COPY --from=builder1 /usr/lib/libtaos.so.1 /usr/lib/
+COPY TDengine-server-2.0.0.0-Linux-x64.tar.gz /root/
+RUN tar -zxf TDengine-server-2.0.0.0-Linux-x64.tar.gz
+WORKDIR /root/TDengine-server/
+RUN /root/TDengine-server/install.sh -e no
+COPY blm_telegraf/server.go /root/blm_telegraf/
+COPY blm_prometheus/server.go /root/blm_prometheus/
 
-RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
+#RUN mkdir /usr/lib/ld
+
+WORKDIR /root/
+RUN go mod init bailongma.com/m/v2
+
+WORKDIR /root/blm_telegraf/
+RUN go build 
+
+WORKDIR /root/blm_prometheus/
+RUN go build
+#RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
+FROM tdengine/tdengine:2.0.0.0
 
 
-RUN git config --global http.sslVerify false
-RUN git config --global http.postbuffer 524288000
+WORKDIR /root
 
-
-RUN go get -v -u -insecure github.com/taosdata/TDengine/src/connector/go/src/taosSql
-RUN go get -v -u -insecure github.com/gogo/protobuf/proto
-RUN go get -v -u -insecure github.com/golang/snappy
-RUN go get -v -u -insecure github.com/prometheus/common/model
-RUN go get -v -u -insecure github.com/prometheus/prometheus/prompb
-RUN go get github.com/taosdata/driver-go/taosSql
-
-
-
-
+COPY --from=builder /root/blm_telegraf/blm_telegraf /root/
+COPY --from=builder /root/blm_prometheus/blm_prometheus /root/
 

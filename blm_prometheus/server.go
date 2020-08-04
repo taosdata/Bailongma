@@ -122,10 +122,10 @@ func init() {
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
 	flag.StringVar(&rwport, "port", "10203", "remote write port")
 	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
-	flag.IntVar(&taglen, "tag-length", 50, "the max length of tag string,default is 30")
+	flag.IntVar(&taglen, "tag-length", 128, "the max length of tag string,default is 30")
 	flag.IntVar(&buffersize, "buffersize", 100, "the buffer size of metrics received")
-	flag.IntVar(&tagnumlimit, "tag-num", 16, "the number of tags in a super table, default is 8")
-	flag.IntVar(&tablepervnode, "table-num", 10000, "the number of tables per TDengine Vnode can create, default 10000")
+	flag.IntVar(&tagnumlimit, "tag-num", 128, "the number of tags in a super table, default is 8")
+	//flag.IntVar(&tablepervnode, "table-num", 10000, "the number of tables per TDengine Vnode can create, default 10000")
 
 	flag.Parse()
 
@@ -540,8 +540,8 @@ func tablenameEscape(mn string) string {
 	stbb := strings.ReplaceAll(mn, ":", "_") // replace : in the metrics name to adapt the TDengine
 	stbc := strings.ReplaceAll(stbb, ".", "_")
 	stbname := strings.ReplaceAll(stbc, "-", "_")
-	if len(stbname) > 60 {
-		stbname = stbname[:60]
+	if len(stbname) > 190 {
+		stbname = stbname[:190]
 	}
 	return stbname
 }
@@ -568,7 +568,7 @@ func createDatabase(dbname string) {
 		log.Fatalf("Open database error: %s\n", err)
 	}
 	defer db.Close()
-	sqlcmd := fmt.Sprintf("create database if not exists %s tables %d", dbname, tablepervnode)
+	sqlcmd := fmt.Sprintf("create database if not exists %s ", dbname)
 	_, err = db.Exec(sqlcmd)
 	sqlcmd = fmt.Sprintf("use %s", dbname)
 	_, err = db.Exec(sqlcmd)
@@ -627,7 +627,7 @@ func processBatches(iworker int) {
 	defer db.Close()
 	sqlcmd := make([]string, batchSize+1)
 	i = 0
-	sqlcmd[i] = "Import into"
+	sqlcmd[i] = "Insert into"
 	i++
 	//blmLog.Printf("processBatches")
 	for onepoint := range batchChans[iworker] {
