@@ -113,7 +113,7 @@ type tableStruct struct {
 func init() {
 	flag.StringVar(&daemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
 	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name. in K8S, could be used to lookup TDengine's IP")
-	flag.StringVar(&apiport, "tdengine-api-port", "6020", "TDengine restful API port")
+	flag.StringVar(&apiport, "tdengine-api-port", "6041", "TDengine restful API port")
 	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 1, "Number of parallel http requests handler .")
 	flag.IntVar(&sqlworkers, "sql-workers", 1, "Number of parallel sql handler.")
@@ -297,7 +297,7 @@ func ProcessReq(req prompb.WriteRequest) error {
 	defer db.Close()
 
 	for _, ts := range req.Timeseries {
-		err = HandleStable(ts, db)
+		err = HandleStable(&ts, db)
 	}
 	return err
 }
@@ -682,11 +682,11 @@ func processBatches(iworker int) {
 
 func TestSerialization() {
 	var req prompb.WriteRequest
-	var ts []*prompb.TimeSeries
+	var ts []prompb.TimeSeries
 	var tse prompb.TimeSeries
 	var sample *prompb.Sample
 	var label prompb.Label
-	var lbs []*prompb.Label
+	var lbs []prompb.Label
 	promPath, err := os.Getwd()
 	if err != nil {
 		fmt.Printf("can't get current dir :%s \n", err)
@@ -732,11 +732,11 @@ func TestSerialization() {
 			}
 			tse.Samples = append(tse.Samples, *sample)
 		} else if strings.Contains(line, "server.go:202:") {
-			lbs = make([]*prompb.Label, 0)
+			lbs = []prompb.Label{}
 			lb := strings.Split(line[45:], "{")
 			label.Name = "__name__"
 			label.Value = lb[0]
-			lbs = append(lbs, &label)
+			lbs = append(lbs, label)
 			lbc := strings.Split(lb[1][:len(lb[1])-1], ", ")
 			for i = 0; i < len(lbc); i++ {
 				content := strings.Split(lbc[i], "=\"")
@@ -747,10 +747,10 @@ func TestSerialization() {
 
 					label.Value = content[1][:len(content[1])-1]
 				}
-				lbs = append(lbs, &label)
+				lbs = append(lbs, label)
 			}
 			tse.Labels = lbs
-			ts = append(ts, &tse)
+			ts = append(ts, tse)
 			req.Timeseries = ts
 		}
 
