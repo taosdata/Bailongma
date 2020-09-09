@@ -16,13 +16,15 @@ import (
 var promPath string
 var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
 
-
+var _ = func() bool {
+	testing.Init()
+	return true
+}()
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if testing.Short() {
 		os.Exit(m.Run())
 	}
-
 	var err error
 	promPath, err = os.Getwd()
 	if err != nil {
@@ -44,9 +46,9 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-func TestSerialization(t *testing.T) {
+func TestSerializationfs(t *testing.T) {
 	var req prompb.WriteRequest;
-	var ts []prompb.TimeSeries
+	var ts []*prompb.TimeSeries
 	var tse prompb.TimeSeries
 	var sample prompb.Sample
 
@@ -75,7 +77,7 @@ func TestSerialization(t *testing.T) {
 			sample.Timestamp, _ = strconv.ParseInt(sa[7][:(len(sa[7])-1)],10,64)
 			sample.Value,_  = strconv.ParseFloat(sa[9][:(len(sa[9])-1)],64)
 			tse.Samples = append(tse.Samples,sample)
-			ts = append(ts,tse)
+			ts = append(ts,&tse)
 			req.Timeseries = ts
 			fmt.Print(ts)
 			ProcessReq(req)
