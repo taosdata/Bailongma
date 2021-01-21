@@ -39,7 +39,7 @@ set the IP of TDengine for example "192.168.0.1"
 set the domain name of TDengine, then blm-prometheus can lookup the ip address of TDengine. 
 
 --tdengine-api-port
-set the restful API port of TDengine. blm-prometheus will query the table schema info from TDengine to keep meta info synchronized. Default is 6020
+set the restful API port of TDengine. blm-prometheus will query the table schema info from TDengine to keep meta info synchronized. Default is 6041 in v2.0+ (was 6020 in v1.6).
 
 --batch-size 
 set the size of how many records in one SQL cmd line writing into TDengine. There is a limitation that TDengine could only accept SQL line small than 64000 bytes, so usually the batch size should not exceed 200. Default is 100.
