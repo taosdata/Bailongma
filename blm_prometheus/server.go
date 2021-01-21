@@ -113,7 +113,7 @@ type tableStruct struct {
 func init() {
 	flag.StringVar(&daemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
 	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name. in K8S, could be used to lookup TDengine's IP")
-	flag.StringVar(&apiport, "tdengine-api-port", "6020", "TDengine restful API port")
+	flag.StringVar(&apiport, "tdengine-api-port", "6041", "TDengine restful API port")
 	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 1, "Number of parallel http requests handler .")
 	flag.IntVar(&sqlworkers, "sql-workers", 1, "Number of parallel sql handler.")
