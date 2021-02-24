@@ -37,7 +37,6 @@ RUN go build
 #RUN ln -s /usr/lib/libtaos.so.1 /usr/lib/libtaos.so
 
 FROM tdengine/tdengine:$tdengine_ver
-ARG tdengine_ver
 
 
 WORKDIR /root
