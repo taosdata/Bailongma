@@ -31,7 +31,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
+	"github.com/emirpasic/gods/sets/hashset"
 	_ "github.com/taosdata/driver-go/taosSql"
 )
 
@@ -90,9 +92,197 @@ var scratchBufPool = &sync.Pool{
 	},
 }
 
+var keywordsSet = hashset.New()
+
+func KeywordsSetInit() {
+	keywordsSet.Add("ablocks")
+	keywordsSet.Add("abort")
+	keywordsSet.Add("account")
+	keywordsSet.Add("accounts")
+	keywordsSet.Add("add")
+	keywordsSet.Add("after")
+	keywordsSet.Add("all")
+	keywordsSet.Add("alter")
+	keywordsSet.Add("and")
+	keywordsSet.Add("as")
+	keywordsSet.Add("asc")
+	keywordsSet.Add("attach")
+	keywordsSet.Add("avg")
+	keywordsSet.Add("before")
+	keywordsSet.Add("begin")
+	keywordsSet.Add("between")
+	keywordsSet.Add("bigint")
+	keywordsSet.Add("binary")
+	keywordsSet.Add("bitand")
+	keywordsSet.Add("bitnot")
+	keywordsSet.Add("bitor")
+	keywordsSet.Add("bool")
+	keywordsSet.Add("bottom")
+	keywordsSet.Add("by")
+	keywordsSet.Add("cache")
+	keywordsSet.Add("cascade")
+	keywordsSet.Add("change")
+	keywordsSet.Add("clog")
+	keywordsSet.Add("cluster")
+	keywordsSet.Add("colon")
+	keywordsSet.Add("column")
+	keywordsSet.Add("comma")
+	keywordsSet.Add("comp")
+	keywordsSet.Add("concat")
+	keywordsSet.Add("configs")
+	keywordsSet.Add("conflict")
+	keywordsSet.Add("connection")
+	keywordsSet.Add("connections")
+	keywordsSet.Add("copy")
+	keywordsSet.Add("count")
+	keywordsSet.Add("create")
+	keywordsSet.Add("ctime")
+	keywordsSet.Add("database")
+	keywordsSet.Add("databases")
+	keywordsSet.Add("days")
+	keywordsSet.Add("deferred")
+	keywordsSet.Add("delimiters")
+	keywordsSet.Add("desc")
+	keywordsSet.Add("describe")
+	keywordsSet.Add("detach")
+	keywordsSet.Add("diff")
+	keywordsSet.Add("distinct")
+	keywordsSet.Add("divide")
+	keywordsSet.Add("dnode")
+	keywordsSet.Add("dnodes")
+	keywordsSet.Add("dot")
+	keywordsSet.Add("double")
+	keywordsSet.Add("drop")
+	keywordsSet.Add("each")
+	keywordsSet.Add("end")
+	keywordsSet.Add("eq")
+	keywordsSet.Add("exists")
+	keywordsSet.Add("explain")
+	keywordsSet.Add("fail")
+	keywordsSet.Add("fill")
+	keywordsSet.Add("first")
+	keywordsSet.Add("float")
+	keywordsSet.Add("for")
+	keywordsSet.Add("from")
+	keywordsSet.Add("ge")
+	keywordsSet.Add("glob")
+	keywordsSet.Add("grants")
+	keywordsSet.Add("group")
+	keywordsSet.Add("gt")
+	keywordsSet.Add("having")
+	keywordsSet.Add("id")
+	keywordsSet.Add("if")
+	keywordsSet.Add("ignore")
+	keywordsSet.Add("immediate")
+	keywordsSet.Add("import")
+	keywordsSet.Add("in")
+	keywordsSet.Add("initially")
+	keywordsSet.Add("insert")
+	keywordsSet.Add("instead")
+	keywordsSet.Add("integer")
+	keywordsSet.Add("interval")
+	keywordsSet.Add("into")
+	keywordsSet.Add("ip")
+	keywordsSet.Add("is")
+	keywordsSet.Add("isnull")
+	keywordsSet.Add("join")
+	keywordsSet.Add("keep")
+	keywordsSet.Add("key")
+	keywordsSet.Add("kill")
+	keywordsSet.Add("last")
+	keywordsSet.Add("le")
+	keywordsSet.Add("leastsquares")
+	keywordsSet.Add("like")
+	keywordsSet.Add("limit")
+	keywordsSet.Add("linear")
+	keywordsSet.Add("local")
+	keywordsSet.Add("lp")
+	keywordsSet.Add("lshift")
+	keywordsSet.Add("lt")
+	keywordsSet.Add("match")
+	keywordsSet.Add("max")
+	keywordsSet.Add("metric")
+	keywordsSet.Add("metrics")
+	keywordsSet.Add("min")
+	keywordsSet.Add("minus")
+	keywordsSet.Add("mnodes")
+	keywordsSet.Add("modules")
+	keywordsSet.Add("nchar")
+	keywordsSet.Add("ne")
+	keywordsSet.Add("none")
+	keywordsSet.Add("not")
+	keywordsSet.Add("notnull")
+	keywordsSet.Add("now")
+	keywordsSet.Add("of")
+	keywordsSet.Add("offset")
+	keywordsSet.Add("or")
+	keywordsSet.Add("order")
+	keywordsSet.Add("pass")
+	keywordsSet.Add("percentile")
+	keywordsSet.Add("plus")
+	keywordsSet.Add("pragma")
+	keywordsSet.Add("prev")
+	keywordsSet.Add("privilege")
+	keywordsSet.Add("queries")
+	keywordsSet.Add("query")
+	keywordsSet.Add("raise")
+	keywordsSet.Add("rem")
+	keywordsSet.Add("replace")
+	keywordsSet.Add("replica")
+	keywordsSet.Add("reset")
+	keywordsSet.Add("restrict")
+	keywordsSet.Add("row")
+	keywordsSet.Add("rows")
+	keywordsSet.Add("rp")
+	keywordsSet.Add("rshift")
+	keywordsSet.Add("scores")
+	keywordsSet.Add("select")
+	keywordsSet.Add("semi")
+	keywordsSet.Add("set")
+	keywordsSet.Add("show")
+	keywordsSet.Add("slash")
+	keywordsSet.Add("sliding")
+	keywordsSet.Add("slimit")
+	keywordsSet.Add("smallint")
+	keywordsSet.Add("spread")
+	keywordsSet.Add("stable")
+	keywordsSet.Add("stables")
+	keywordsSet.Add("star")
+	keywordsSet.Add("statement")
+	keywordsSet.Add("stddev")
+	keywordsSet.Add("stream")
+	keywordsSet.Add("streams")
+	keywordsSet.Add("string")
+	keywordsSet.Add("sum")
+	keywordsSet.Add("table")
+	keywordsSet.Add("tables")
+	keywordsSet.Add("tag")
+	keywordsSet.Add("tags")
+	keywordsSet.Add("tblocks")
+	keywordsSet.Add("tbname")
+	keywordsSet.Add("times")
+	keywordsSet.Add("timestamp")
+	keywordsSet.Add("tinyint")
+	keywordsSet.Add("top")
+	keywordsSet.Add("topic")
+	keywordsSet.Add("trigger")
+	keywordsSet.Add("uminus")
+	keywordsSet.Add("uplus")
+	keywordsSet.Add("use")
+	keywordsSet.Add("user")
+	keywordsSet.Add("users")
+	keywordsSet.Add("using")
+	keywordsSet.Add("values")
+	keywordsSet.Add("variable")
+	keywordsSet.Add("vgroups")
+	keywordsSet.Add("view")
+	keywordsSet.Add("wavg")
+	keywordsSet.Add("where")
+}
+
 // Parse args:
 func init() {
-	flag.StringVar(&daemonUrl, "host", "", "TDengine host.")
+	flag.StringVar(&daemonUrl, "host", "127.0.0.1", "TDengine host.")
 
 	flag.IntVar(&batchSize, "batch-size", 10, "Batch size (input items).")
 	flag.IntVar(&httpworkers, "http-workers", 10, "Number of parallel http requests handler .")
@@ -123,6 +313,8 @@ func init() {
 	blmLog = log.New(logFile, "", log.LstdFlags)
 	blmLog.SetPrefix("BLM_TLG")
 	blmLog.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	KeywordsSetInit()
 
 }
 
@@ -351,6 +543,38 @@ func SerilizeTDengine(m metric, dbn string, hostip string, taglist *list.List, d
 	return nil
 }
 
+func TaosNameEscape(name string) string {
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, ":", "_")
+	name = strings.ReplaceAll(name, ".", "_")
+	name = strings.ReplaceAll(name, "-", "_")
+	chars := []rune(name)
+	if len(name) == 0 {
+		return "__"
+	}
+	if unicode.IsDigit(chars[0]) {
+		return "_" + name
+	}
+	if keywordsSet.Contains(name) {
+		return "_" + name
+	}
+	return name
+}
+func TaosTableNameEscape(name string) string {
+	name = TaosNameEscape(name)
+	if len(name) > 160 {
+		return name[:160]
+	}
+	return name
+}
+func TaosFieldNameEscape(name string) string {
+	name = TaosNameEscape(name)
+	if len(name) > 64 {
+		return name[:64]
+	}
+	return name
+}
+
 func ProcessData(ts []metric, dbn string, hostip string) error {
 	db, err := sql.Open(taosDriverName, dbuser+":"+dbpassword+"@/tcp("+daemonUrl+")/"+dbname)
 	if err != nil {
@@ -370,6 +594,7 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 		for i := 0; i < len(ts); i++ {
 
 			for k, _ := range ts[i].Tags {
+				k = TaosFieldNameEscape(k)
 				_, ok := tagmap[k]
 				if !ok {
 					taglist.PushBack(k)
@@ -378,11 +603,13 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 			}
 		}
 		var sqlcmd string
-		sqlcmd = "create table if not exists " + ts[0].Name + " (ts timestamp, value double) tags("
-		sqlcmd1 := "create table if not exists " + ts[0].Name + "_str (ts timestamp, value binary(256)) tags("
+		tbname := TaosTableNameEscape(ts[0].Name)
+		sqlcmd = "create table if not exists " + tbname + " (ts timestamp, value double) tags("
+		sqlcmd1 := "create table if not exists " + tbname + "_str (ts timestamp, value binary(256)) tags("
 		for e := taglist.Front(); e != nil; e = e.Next() {
-			sqlcmd = sqlcmd + e.Value.(string) + tagstr + ","
-			sqlcmd1 = sqlcmd1 + e.Value.(string) + tagstr + ","
+			tagname := e.Value.(string)
+			sqlcmd = sqlcmd + tagname + tagstr + ","
+			sqlcmd1 = sqlcmd1 + tagname + tagstr + ","
 		}
 		sqlcmd = sqlcmd + "srcip binary(20), field binary(40))\n"
 		sqlcmd1 = sqlcmd1 + "srcip binary(20), field binary(40))\n"
@@ -400,12 +627,13 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 
 	var sqlcmd, sqlcmd1 string
 	for i := 0; i < len(ts); i++ {
-
 		for k, _ := range ts[i].Tags {
+			k = TaosFieldNameEscape(k)
 			_, ok := tagmap[k]
 			if !ok {
-				sqlcmd = sqlcmd + "alter table " + ts[0].Name + " add tag " + k + tagstr + "\n"
-				sqlcmd1 = sqlcmd1 + "alter table " + ts[0].Name + "_str add tag " + k + tagstr + "\n"
+				tbname := TaosTableNameEscape(ts[0].Name)
+				sqlcmd = sqlcmd + "alter table " + tbname + " add tag " + k + tagstr + "\n"
+				sqlcmd1 = sqlcmd1 + "alter table " + tbname + "_str add tag " + k + tagstr + "\n"
 				taglist.PushBack(k)
 				tagmap[k] = "y"
 
