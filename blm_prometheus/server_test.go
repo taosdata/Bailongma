@@ -1,16 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"github.com/prometheus/prometheus/prompb"
+	"io"
 	"os"
 	"path/filepath"
-	"testing"
-	"bufio"
-	"io"
-	"strings"
 	"strconv"
-	"github.com/prometheus/prometheus/prompb"	
+	"strings"
+	"testing"
 )
 
 var promPath string
@@ -47,10 +47,14 @@ func TestMain(m *testing.M) {
 }
 
 func TestSerializationfs(t *testing.T) {
-	var req prompb.WriteRequest;
+	var req prompb.WriteRequest
 	var ts []*prompb.TimeSeries
 	var tse prompb.TimeSeries
 	var sample prompb.Sample
+	var labels []*prompb.Label
+	labelValue1 := prompb.Label{Name: "__name__",Value: "testLabel"}
+	labelValue2 := prompb.Label{Name: "instance",Value: "testTagInstance"}
+	labels = append(labels,&labelValue1,&labelValue2)
 
 	testfile,err := os.OpenFile(promPath,os.O_RDWR,0666)
 	if err != nil {
@@ -77,18 +81,11 @@ func TestSerializationfs(t *testing.T) {
 			sample.Timestamp, _ = strconv.ParseInt(sa[7][:(len(sa[7])-1)],10,64)
 			sample.Value,_  = strconv.ParseFloat(sa[9][:(len(sa[9])-1)],64)
 			tse.Samples = append(tse.Samples,sample)
+			tse.Labels = labels
 			ts = append(ts,&tse)
 			req.Timeseries = ts
 			fmt.Print(ts)
-			ProcessReq(req)
 		}
-		
-
-		
-		
-
-
-		
 	}
-
+	ProcessReq(req)
 }
