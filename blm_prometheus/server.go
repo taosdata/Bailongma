@@ -294,6 +294,7 @@ func readHandle() http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		myLog.Info("req info==", req)
 		var resp *prompb.ReadResponse
 		resp, err = reader.Read(&req)
 		if err != nil {
@@ -386,7 +387,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 	for _, l := range ts.Labels {
 		m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 
-		if string(l.Name) == "__name__" {
+		if string(l.Name) == model.MetricNameLabel {
 			metricsName = string(l.Value)
 			tbn += metricsName
 			hasName = true
@@ -457,7 +458,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 				i := 0
 				for _, l := range ts.Labels {
 					k := strings.ToLower(string(l.Name))
-					if k == "__name__" {
+					if k == model.MetricNameLabel {
 						continue
 					}
 					i++
@@ -513,7 +514,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 		i := 0
 		for _, l := range ts.Labels {
 			k := strings.ToLower(string(l.Name))
-			if k == "__name__" {
+			if k == model.MetricNameLabel {
 				continue
 			}
 			i++
@@ -801,7 +802,7 @@ func TestSerialization() {
 		} else if strings.Contains(line, "server.go:202:") {
 			lbs = make([]*prompb.Label, 0)
 			lb := strings.Split(line[45:], "{")
-			label.Name = "__name__"
+			label.Name = model.MetricNameLabel
 			label.Value = lb[0]
 			lbs = append(lbs, &label)
 			lbc := strings.Split(lb[1][:len(lb[1])-1], ", ")
