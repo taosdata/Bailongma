@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 var promPath string
@@ -88,4 +89,15 @@ func TestSerializationfs(t *testing.T) {
 		}
 	}
 	ProcessReq(req)
+}
+
+func TestData(t *testing.T)  {
+	var timeStampValue = 1619870400000
+	fmt.Println(toTimestamp(int64(timeStampValue)).Format(time.RFC3339))
+}
+
+func toTimestamp(milliseconds int64) time.Time {
+	sec := milliseconds / 1000
+	nsec := (milliseconds - (sec * 1000)) * 1000000
+	return time.Unix(sec, nsec)
 }

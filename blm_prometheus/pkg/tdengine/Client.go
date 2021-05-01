@@ -38,7 +38,7 @@ func NewClient(cfg *Config) *Client {
 }
 
 func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
-	db, err := sql.Open("taosSql", c.cfg.Dbuser+":"+c.cfg.Dbpassword+"@/tcp("+c.cfg.DaemonIP+")/")
+	db, err := sql.Open("taosSql", c.cfg.Dbuser+":"+c.cfg.Dbpassword+"@/tcp("+c.cfg.DaemonIP+")/"+c.cfg.Dbname)
 	if err != nil {
 		log.Error("Open database error: %s\n", err)
 	}
@@ -146,10 +146,8 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		},
 	}
 	for _, ts := range labelsToSeries {
+		log.Debug("ts size",ts.Size())
 		resp.Results[0].Timeseries = append(resp.Results[0].Timeseries, ts)
-		//if c.cfg.pgPrometheusLogSamples {
-		//	log.Debug("timeseries", ts.String())
-		//}
 	}
 
 	log.Debug("msg", "Returned response", "#timeseries", len(labelsToSeries))
@@ -207,10 +205,11 @@ func (c *Client) buildQuery(q *prompb.Query) (string, string, error) {
 	if len(tableName) == 0 {
 		return "", "", fmt.Errorf("unknown tableName")
 	}
-	matchers = append(matchers, fmt.Sprintf("time >= '%v'", toTimestamp(q.StartTimestampMs).Format(time.RFC3339)))
-	matchers = append(matchers, fmt.Sprintf("time <= '%v'", toTimestamp(q.EndTimestampMs).Format(time.RFC3339)))
+	log.Info("startTime,endTime--",q.StartTimestampMs,q.EndTimestampMs)
+	matchers = append(matchers, fmt.Sprintf("ts >= %v", q.StartTimestampMs))
+	matchers = append(matchers, fmt.Sprintf("ts <= %v", q.EndTimestampMs))
 
-	return tableName, fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY time",
+	return tableName, fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY ts",
 		tableName, strings.Join(matchers, " AND ")), nil
 }
 
