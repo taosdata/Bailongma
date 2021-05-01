@@ -1,0 +1,14 @@
+.idea
+.idea/**
+*.iws
+*.iml
+*.ipr
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+**/logs/
+go.sum
+go.mod
+**/go.sum
+**/go.mod
