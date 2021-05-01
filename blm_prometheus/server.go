@@ -16,6 +16,7 @@
 package main
 
 import (
+	"blm_prometheus/pkg/tdengine"
 	"bufio"
 	"container/list"
 	"crypto/md5"
@@ -37,12 +38,12 @@ import (
 	"sync"
 	"time"
 
+	myLog "blm_prometheus/pkg/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
-	_ "github.com/taosdata/driver-go/taosSql"
-
 	"github.com/prometheus/prometheus/prompb"
+	_ "github.com/taosdata/driver-go/taosSql"
 )
 
 type Bailongma struct {
@@ -109,8 +110,15 @@ type tableStruct struct {
 	rows   int64
 }
 
+type reader interface {
+	Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error)
+	Name() string
+	HealthCheck() error
+}
+
 // Parse args:
 func init() {
+	myLog.Init("debug")
 	flag.StringVar(&daemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
 	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name. in K8S, could be used to lookup TDengine's IP")
 	flag.StringVar(&apiport, "tdengine-api-port", "6041", "TDengine restful API port")
@@ -246,10 +254,69 @@ func main() {
 	if debugprt == 5 {
 		TestSerialization()
 	}
+	// read
+	http.Handle("/read", readHandle())
 	blmLog.Fatal(http.ListenAndServe(":"+rwport, nil))
 
 }
 
+func buildClients() reader {
+	config := tdengine.Config{
+		Dbname: dbname,
+		Dbpassword: dbpassword,
+		Dbuser: dbuser,
+		DaemonIP: daemonIP,
+		DaemonName: daemonName,
+		Table: "",
+	}
+	tdClient := tdengine.NewClient(&config)
+	return tdClient
+}
+
+func readHandle() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reader :=buildClients()
+		compressed, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			//log.Fatalf("Read error: %s\n", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		reqBuf, err := snappy.Decode(nil, compressed)
+		if err != nil {
+			myLog.Warn("Decode error: %s\n", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var req prompb.ReadRequest
+		if err := proto.Unmarshal(reqBuf, &req); err != nil {
+			myLog.Warn("Unmarshal error: %s\n", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var resp *prompb.ReadResponse
+		resp, err = reader.Read(&req)
+		if err != nil {
+			myLog.Warn("msg", "Error executing query", "query", req, "storage", reader.Name(), "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data, err := proto.Marshal(resp)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set("Content-Encoding", "snappy")
+
+		compressed = snappy.Encode(nil, data)
+		if _, err := w.Write(compressed); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	})
+}
 func queryTableStruct(tbname string) string {
 	client := new(http.Client)
 	s := fmt.Sprintf("describe %s.%s", dbname, tbname)
