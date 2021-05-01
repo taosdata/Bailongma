@@ -46,7 +46,7 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 	c.DB = db
 	labelsToSeries := map[string]*prompb.TimeSeries{}
 	for _, q := range req.Queries {
-		command, err := c.buildCommand(q)
+		tableName, command, err := c.buildCommand(q)
 
 		if err != nil {
 			return nil, err
@@ -61,34 +61,60 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		}
 
 		defer rows.Close()
+		columns, err := rows.Columns()
+		if err != nil {
+			return nil, err
+		}
+
+		columnLength := len(columns)
+		// temp for cache
+		cache := make([]interface{}, columnLength)
+		// init for row
+		for index, _ := range cache {
+			var a interface{}
+			cache[index] = &a
+		}
 
 		for rows.Next() {
 			var (
-				value  float64
-				name   string
-				labels sampleLabels
-				time   time.Time
+				value    float64
+				dataTime time.Time
 			)
-			err := rows.Scan(&time, &name, &value, &labels)
-
-			if err != nil {
-				return nil, err
+			error := rows.Scan(cache...)
+			if error != nil {
+				return nil, error
+			}
+			row := make(map[string]string)
+			//set data
+			for i, data := range cache {
+				if columns[i] == "ts" {
+					timeStr := (*data.(*interface{})).(string)
+					dataTime, err = time.Parse("2006-01-02 15:04:05.000", timeStr)
+					if err != nil {
+						continue
+					}
+				} else if columns[i] == "value" {
+					value = (*data.(*interface{})).(float64)
+				} else if columns[i] != "taghash" {
+					row[columns[i]] = (*data.(*interface{})).(string)
+				}
 			}
 
-			key := labels.key(name)
-			ts, ok := labelsToSeries[key]
-
+			ts, ok := labelsToSeries[tableName]
 			if !ok {
-				labelPairs := make([]*prompb.Label, 0, labels.len()+1)
+				labelPairs := make([]*prompb.Label, 0, columnLength-2)
 				labelPairs = append(labelPairs, &prompb.Label{
 					Name:  model.MetricNameLabel,
-					Value: name,
+					Value: tableName,
 				})
 
-				for _, k := range labels.OrderedKeys {
+				for _, k := range columns {
+					if k == "ts" || k == "value" || k == "taghash" {
+						continue
+					}
 					labelPairs = append(labelPairs, &prompb.Label{
 						Name:  k,
-						Value: labels.Map[k],
+						Value: row[k],
 					})
 				}
 
@@ -96,11 +122,11 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 					Labels:  labelPairs,
 					Samples: make([]prompb.Sample, 0, 100),
 				}
-				labelsToSeries[key] = ts
+				labelsToSeries[tableName] = ts
 			}
 
 			ts.Samples = append(ts.Samples, prompb.Sample{
-				Timestamp: time.UnixNano() / 1000000,
+				Timestamp: dataTime.UnixNano() / 1000000,
 				Value:     value,
 			})
 		}
@@ -131,11 +157,11 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 	return &resp, nil
 }
 
-func (c *Client) buildCommand(q *prompb.Query) (string, error) {
+func (c *Client) buildCommand(q *prompb.Query) (string, string, error) {
 	return c.buildQuery(q)
 }
 
-func (c *Client) buildQuery(q *prompb.Query) (string, error) {
+func (c *Client) buildQuery(q *prompb.Query) (string, string, error) {
 	matchers := make([]string, 0, len(q.Matchers))
 	var tableName = ""
 	for _, m := range q.Matchers {
@@ -145,16 +171,16 @@ func (c *Client) buildQuery(q *prompb.Query) (string, error) {
 			switch m.Type {
 			case prompb.LabelMatcher_EQ:
 				if len(escapedValue) == 0 {
-					return "", fmt.Errorf("unknown metric name match type %v", m.Type)
+					return "", "", fmt.Errorf("unknown metric name match type %v", m.Type)
 				} else {
 					tableName = escapedValue
 				}
 			case prompb.LabelMatcher_NEQ:
 			case prompb.LabelMatcher_RE:
 			case prompb.LabelMatcher_NRE:
-				return "", fmt.Errorf("no support metric name type %v", m.Type)
+				return "", "", fmt.Errorf("no support metric name type %v", m.Type)
 			default:
-				return "", fmt.Errorf("unknown metric name match type %v", m.Type)
+				return "", "", fmt.Errorf("unknown metric name match type %v", m.Type)
 			}
 		} else {
 			switch m.Type {
@@ -172,19 +198,19 @@ func (c *Client) buildQuery(q *prompb.Query) (string, error) {
 			case prompb.LabelMatcher_RE:
 				matchers = append(matchers, fmt.Sprintf("t_%s like '%s'", escapedName, anchorValue(escapedValue)))
 			case prompb.LabelMatcher_NRE:
-				return "", fmt.Errorf("no support match type %v", m.Type)
+				return "", "", fmt.Errorf("no support match type %v", m.Type)
 			default:
-				return "", fmt.Errorf("unknown match type %v", m.Type)
+				return "", "", fmt.Errorf("unknown match type %v", m.Type)
 			}
 		}
 	}
 	if len(tableName) == 0 {
-		return "", fmt.Errorf("unknown tableName")
+		return "", "", fmt.Errorf("unknown tableName")
 	}
 	matchers = append(matchers, fmt.Sprintf("time >= '%v'", toTimestamp(q.StartTimestampMs).Format(time.RFC3339)))
 	matchers = append(matchers, fmt.Sprintf("time <= '%v'", toTimestamp(q.EndTimestampMs).Format(time.RFC3339)))
 
-	return fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY time",
+	return tableName, fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY time",
 		tableName, strings.Join(matchers, " AND ")), nil
 }
 
