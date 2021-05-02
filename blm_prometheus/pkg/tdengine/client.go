@@ -1,11 +1,11 @@
 package tdengine
 
 import (
-	"blm_prometheus/pkg/log"
 	"database/sql"
 	"fmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"log"
 	"strings"
 	"time"
 )
@@ -21,9 +21,9 @@ type Config struct {
 	Table      string
 	DaemonIP   string
 	DaemonName string
-	Dbname     string
-	Dbuser     string
-	Dbpassword string
+	DbName     string
+	DbUser     string
+	DbPassword string
 }
 type Client struct {
 	DB  *sql.DB
@@ -38,9 +38,9 @@ func NewClient(cfg *Config) *Client {
 }
 
 func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
-	db, err := sql.Open("taosSql", c.cfg.Dbuser+":"+c.cfg.Dbpassword+"@/tcp("+c.cfg.DaemonIP+")/"+c.cfg.Dbname)
+	db, err := sql.Open("taosSql", c.cfg.DbUser+":"+c.cfg.DbPassword+"@/tcp("+c.cfg.DaemonIP+")/"+c.cfg.DbName)
 	if err != nil {
-		log.Error("Open database error: %s\n", err)
+		log.Printf("Open database error: %s\n", err)
 	}
 	defer db.Close()
 	c.DB = db
@@ -51,16 +51,13 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		log.Debug("msg", "Executed query", "query", command)
+		log.Printf("Executed query：%s\n", command)
 
 		rows, err := c.DB.Query(command)
-
 		if err != nil {
 			return nil, err
 		}
 
-		defer rows.Close()
 		columns, err := rows.Columns()
 		if err != nil {
 			return nil, err
@@ -80,10 +77,12 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 				value    float64
 				dataTime time.Time
 			)
+
 			error := rows.Scan(cache...)
 			if error != nil {
 				return nil, error
 			}
+
 			row := make(map[string]string)
 			//set data
 			for i, data := range cache {
@@ -132,10 +131,11 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		}
 
 		err = rows.Err()
-
 		if err != nil {
 			return nil, err
 		}
+
+		rows.Close()
 	}
 
 	resp := prompb.ReadResponse{
@@ -146,12 +146,10 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		},
 	}
 	for _, ts := range labelsToSeries {
-		log.Debug("ts size",ts.Size())
+		log.Printf("ts size: %d\n", ts.Size())
 		resp.Results[0].Timeseries = append(resp.Results[0].Timeseries, ts)
 	}
-
-	log.Debug("msg", "Returned response", "#timeseries", len(labelsToSeries))
-
+	log.Printf("Returned response #timeseries: %d\n", len(labelsToSeries))
 	return &resp, nil
 }
 
@@ -202,10 +200,12 @@ func (c *Client) buildQuery(q *prompb.Query) (string, string, error) {
 			}
 		}
 	}
+
 	if len(tableName) == 0 {
 		return "", "", fmt.Errorf("unknown tableName")
 	}
-	log.Info("startTime,endTime--",q.StartTimestampMs,q.EndTimestampMs)
+
+	log.Printf("startTime：%d ,endTime:%d\n", q.StartTimestampMs, q.EndTimestampMs)
 	matchers = append(matchers, fmt.Sprintf("ts >= %v", q.StartTimestampMs))
 	matchers = append(matchers, fmt.Sprintf("ts <= %v", q.EndTimestampMs))
 
@@ -256,7 +256,7 @@ func (c *Client) HealthCheck() error {
 	rows, err := c.DB.Query("SELECT 1")
 
 	if err != nil {
-		log.Debug("msg", "Health check error", "err", err)
+		log.Printf("Health check error %v\n", err)
 		return err
 	}
 

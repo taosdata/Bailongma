@@ -1,40 +1,30 @@
 package log
 
 import (
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
-	"github.com/prometheus/common/promlog"
+	"fmt"
+	"log"
+	"os"
 )
 
 var (
-	// Application wide logger
-	logger log.Logger
+	logger *log.Logger
 )
 
-func Init(logLevel string) {
-	allowedLevel := promlog.AllowedLevel{}
-	allowedLevel.Set(logLevel)
+//func GetInstance(fileName string) *log.Logger {
+//	once.Do(func() {
+//		logger = Init(fileName)
+//	})
+//	return logger
+//}
 
-    config := promlog.Config{
-        Level: &allowedLevel,
-        Format: &promlog.AllowedFormat{},
-    }
-
-	logger = promlog.New(&config)
-}
-
-func Debug(keyvals ...interface{}) {
-	level.Debug(logger).Log(keyvals...)
-}
-
-func Info(keyvals ...interface{}) {
-	level.Info(logger).Log(keyvals...)
-}
-
-func Warn(keyvals ...interface{}) {
-	level.Warn(logger).Log(keyvals...)
-}
-
-func Error(keyvals ...interface{}) {
-	level.Error(logger).Log(keyvals...)
+func Init(fileName string) *log.Logger {
+	logFile, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	logger = log.New(logFile, "", log.LstdFlags)
+	logger.SetPrefix("BLM_PRM")
+	logger.SetFlags(log.LstdFlags | log.Lshortfile)
+	return logger
 }
