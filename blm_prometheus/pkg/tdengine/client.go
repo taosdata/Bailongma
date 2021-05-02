@@ -1,11 +1,11 @@
 package tdengine
 
 import (
+	"blm_prometheus/pkg/log"
 	"database/sql"
 	"fmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
-	"log"
 	"strings"
 	"time"
 )
@@ -40,7 +40,7 @@ func NewClient(cfg *Config) *Client {
 func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 	db, err := sql.Open("taosSql", c.cfg.DbUser+":"+c.cfg.DbPassword+"@/tcp("+c.cfg.DaemonIP+")/"+c.cfg.DbName)
 	if err != nil {
-		log.Printf("Open database error: %s\n", err)
+		log.Errorf("Open database error: %s\n", err)
 	}
 	defer db.Close()
 	c.DB = db
@@ -51,7 +51,7 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("Executed query：%s\n", command)
+		log.Infof("Executed query：%s\n", command)
 
 		rows, err := c.DB.Query(command)
 		if err != nil {
@@ -146,10 +146,10 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 		},
 	}
 	for _, ts := range labelsToSeries {
-		log.Printf("ts size: %d\n", ts.Size())
+		log.Infof("ts size: %d\n", ts.Size())
 		resp.Results[0].Timeseries = append(resp.Results[0].Timeseries, ts)
 	}
-	log.Printf("Returned response #timeseries: %d\n", len(labelsToSeries))
+	log.Infof("Returned response #timeseries: %d\n", len(labelsToSeries))
 	return &resp, nil
 }
 
@@ -205,7 +205,7 @@ func (c *Client) buildQuery(q *prompb.Query) (string, string, error) {
 		return "", "", fmt.Errorf("unknown tableName")
 	}
 
-	log.Printf("startTime：%d ,endTime:%d\n", q.StartTimestampMs, q.EndTimestampMs)
+	log.Infof("startTime：%d ,endTime:%d\n", q.StartTimestampMs, q.EndTimestampMs)
 	matchers = append(matchers, fmt.Sprintf("ts >= %v", q.StartTimestampMs))
 	matchers = append(matchers, fmt.Sprintf("ts <= %v", q.EndTimestampMs))
 
@@ -256,7 +256,7 @@ func (c *Client) HealthCheck() error {
 	rows, err := c.DB.Query("SELECT 1")
 
 	if err != nil {
-		log.Printf("Health check error %v\n", err)
+		log.Errorf("Health check error %v\n", err)
 		return err
 	}
 

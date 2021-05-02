@@ -38,7 +38,7 @@ import (
 	"sync"
 	"time"
 
-	blmLog "blm_prometheus/pkg/log"
+	logger "blm_prometheus/pkg/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
@@ -148,14 +148,14 @@ func init() {
 
 	tagStr = fmt.Sprintf(" binary(%d)", tagLen)
 	// init logger
-	blmLog.Init(logNameDefault)
+	logger.Init(logNameDefault)
 
-	log.Printf("host: ip")
-	log.Printf(daemonIP)
-	log.Printf("  port: ")
-	log.Printf(rwPort)
-	log.Printf("  database: ")
-	log.Println(dbName)
+	logger.Infof("host: ip")
+	logger.Infof(daemonIP)
+	logger.Infof("  port: ")
+	logger.Infof(rwPort)
+	logger.Infof("  database: ")
+	logger.Infoln(dbName)
 
 }
 
@@ -212,7 +212,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		//log.Println(string(compressed))
+		//logger.Infoln()(string(compressed))
 		var output string = ""
 		schema, ok := IsSTableCreated.Load(string(compressed))
 		if !ok {
@@ -233,7 +233,7 @@ func main() {
 		res := queryTableStruct(string(compressed))
 		output = output + "\nTable structure:\n" + res
 		s := fmt.Sprintf("query result:\n %s\n", output)
-		//log.Println(s)
+		//logger.Infoln()(s)
 		w.Write([]byte(s))
 		w.WriteHeader(http.StatusOK)
 	})
@@ -273,21 +273,21 @@ func readHandle() http.Handler {
 		}
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			log.Printf("Decode error: %s\n", err)
+			logger.Infof("Decode error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		var req prompb.ReadRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			log.Printf("Unmarshal error: %s\n", err)
+			logger.Infof("Unmarshal error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		log.Printf("req info== %v\n", req)
+		logger.Infof("req info== %v\n", req)
 		var resp *prompb.ReadResponse
 		resp, err = reader.Read(&req)
 		if err != nil {
-			log.Printf("msg", "Error executing query", "query", req, "storage", reader.Name(), "err", err)
+			logger.Infof("msg", "Error executing query", "query", req, "storage", reader.Name(), "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -317,7 +317,7 @@ func queryTableStruct(tbname string) string {
 	resp, err := client.Do(req)
 
 	if err != nil {
-		log.Println(err)
+		logger.Infoln(err)
 		fmt.Println(err)
 		return ""
 	} else {
@@ -402,8 +402,8 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 			tm := t / 1000
 			ns = t - tm*1000
 		}
-		log.Printf(" Ts: %s, value: %f, ", time.Unix(t/1000, ns), ts.Samples[0].Value)
-		log.Println(ts)
+		logger.Debugf(" Ts: %s, value: %f, ", time.Unix(t/1000, ns), ts.Samples[0].Value)
+		logger.Debugln(ts)
 	}
 
 	if !hasName {
@@ -451,7 +451,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 							sqlcmd = "alter table " + sTableName + " add tag t_" + k + tagStr + "\n"
 							_, err := execSql(dbName, sqlcmd, db)
 							if err != nil {
-								log.Println(err)
+								logger.Infoln(err)
 								errorCode := fmt.Sprintf("%s", err)
 								if strings.Contains(errorCode, "duplicated column names") {
 									tbTagList.PushBack(k)
@@ -482,11 +482,11 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 				if err == nil {
 					IsSTableCreated.Store(sTableName, nt)
 				} else {
-					log.Println(err)
+					logger.Infoln(err)
 				}
 			}
 		} else { //query TDengine table error
-			log.Println(err)
+			logger.Infoln(err)
 		}
 	} else {
 		nTag := schema.(nameTag)
@@ -506,7 +506,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 					sqlcmd = "alter table " + sTableName + " add tag t_" + k + tagStr + "\n"
 					_, err := execSql(dbName, sqlcmd, db)
 					if err != nil {
-						log.Println(err)
+						logger.Infoln(err)
 						errorCode := fmt.Sprintf("%s", err)
 						if strings.Contains(errorCode, "duplicated column names") {
 							tbTagList.PushBack(k)
@@ -617,11 +617,11 @@ func execSql(dbName string, sqlcmd string, db *sql.DB) (sql.Result, error) {
 		return nil, nil
 	}
 	if debugPrt == 2 {
-		log.Println(sqlcmd)
+		logger.Debugln(sqlcmd)
 	}
 	res, err := db.Exec(sqlcmd)
 	if err != nil {
-		log.Printf("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
+		logger.Infof("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
 
 	}
 	return res, err
@@ -629,7 +629,7 @@ func execSql(dbName string, sqlcmd string, db *sql.DB) (sql.Result, error) {
 
 func checkErr(err error) {
 	if err != nil {
-		log.Println(err)
+		logger.Infoln(err)
 	}
 }
 
@@ -644,7 +644,7 @@ func processBatches(iworker int) {
 	var i int
 	db, err := sql.Open(taosDriverName, dbUser+":"+dbPassword+"@/tcp("+daemonIP+")/"+dbName)
 	if err != nil {
-		log.Printf("processBatches Open database error: %s\n", err)
+		logger.Infof("processBatches Open database error: %s\n", err)
 		var count int = 5
 		for {
 			if err != nil && count > 0 {
@@ -653,7 +653,7 @@ func processBatches(iworker int) {
 				count--
 			} else {
 				if err != nil {
-					log.Printf("processBatches Error: %s open database\n", err)
+					logger.Infof("processBatches Error: %s open database\n", err)
 					return
 				}
 				break
@@ -665,16 +665,16 @@ func processBatches(iworker int) {
 	i = 0
 	sqlcmd[i] = "Insert into"
 	i++
-	//log.Printf("processBatches")
+	//logger.Infof("processBatches")
 	for onepoint := range batchChannels[iworker] {
 		sqlcmd[i] = onepoint
 		i++
 		if i > batchSize {
 			i = 1
-			//log.Printf(strings.Join(sqlcmd, ""))
+			//logger.Infof(strings.Join(sqlcmd, ""))
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
-				log.Printf("processBatches error %s", err)
+				logger.Infof("processBatches error %s", err)
 				var count int = 2
 				for {
 					if err != nil && count > 0 {
@@ -683,7 +683,7 @@ func processBatches(iworker int) {
 						count--
 					} else {
 						if err != nil {
-							log.Printf("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
+							logger.Infof("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
 						}
 						break
 					}
@@ -694,7 +694,7 @@ func processBatches(iworker int) {
 	}
 	if i > 1 {
 		i = 1
-		//		log.Printf(strings.Join(sqlcmd, ""))
+		//		logger.Infof(strings.Join(sqlcmd, ""))
 		_, err := db.Exec(strings.Join(sqlcmd, ""))
 		if err != nil {
 			var count int = 2
@@ -705,7 +705,7 @@ func processBatches(iworker int) {
 					count--
 				} else {
 					if err != nil {
-						log.Printf("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
+						logger.Infof("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
 					}
 					break
 				}
@@ -729,16 +729,16 @@ func TestSerialization() {
 		os.Exit(1)
 	}
 	promPath = filepath.Join(promPath, "testData/blm_prometheus.log")
-	testfile, err := os.OpenFile(promPath, os.O_RDWR, 0666)
+	testFile, err := os.OpenFile(promPath, os.O_RDWR, 0666)
 	if err != nil {
 		fmt.Println("Open file error!", err)
 		return
 	}
-	defer testfile.Close()
+	defer testFile.Close()
 	fmt.Println(promPath)
-	buf := bufio.NewReader(testfile)
+	buf := bufio.NewReader(testFile)
 	i := 0
-	lasttime := "20:40:20"
+	lastTime := "20:40:20"
 	for {
 		line, err := buf.ReadString('\n')
 		if err != nil {
@@ -753,9 +753,9 @@ func TestSerialization() {
 		sa := strings.Split(line, " ")
 
 		if strings.Contains(line, "server.go:201:") {
-			if sa[3] != lasttime {
+			if sa[3] != lastTime {
 				nodeChannels[0] <- req
-				lasttime = sa[3]
+				lastTime = sa[3]
 				req.Timeseries = req.Timeseries[:0]
 				ts = ts[:0]
 			}
