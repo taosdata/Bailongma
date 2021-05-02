@@ -100,7 +100,7 @@ func init() {
 	flag.StringVar(&write.DbName, "dbname", "prometheus", "Database name where to store metrics")
 	flag.StringVar(&write.DbUser, "dbuser", "root", "User for host to send result metrics")
 	flag.StringVar(&write.DbPassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
-	flag.StringVar(&write.RWPort, "port", "10203", "remote write port")
+	flag.StringVar(&write.RWPort, "port", "10203", "remote write and read port")
 	flag.IntVar(&write.DebugPrt, "debugprt", 0, "if 0 not print, if 1 print the sql")
 	flag.IntVar(&write.TagLen, "tag-length", 128, "the max length of tag string,default is 30")
 	flag.IntVar(&write.BufferSize, "buffersize", 100, "the buffer size of metrics received")
