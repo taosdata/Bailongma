@@ -1,21 +1,17 @@
-# Prometheus Remote Write And Read Adapter for TDengine
+# Prometheus Remote Write Adapter for TDengine
 
-This is an adapter to support Prometheus remote write and read into TDengine.
+This is an adapter to support Prometheus remote write into TDengine and and read from TDengine.
 
 ## Prerequisite
 
-before running the software, you need to install the `golang-1.10` or later version in your environment and
-install [TDengine][] so the program can use the lib of TDengine.
+before running the software, you need to install the `golang-1.10` or later version in your environment and install [TDengine][] so the program can use the lib of TDengine.
 
 To use it:
 
 ```
 go build
 ```
-
-During the go build process, there maybe some errors occurred because of lacking some needed packages. You can
-use `go get` the package to solve it
-
+During the go build process, there maybe some errors occurred because of lacking some needed packages. You can use `go get` the package to solve it
 ```
 go get github.com/gogo/protobuf/proto
 go get github.com/golang/snappy
@@ -24,7 +20,6 @@ go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
 go get github.com/prometheus/prometheus/prompb
 
 ```
-
 After successful build, there will be a blm_prometheus in the same directory.
 
 ## Running in background
@@ -34,7 +29,6 @@ Using following command to run the program in background
 ```
 nohup ./blm_prometheus --tdengine-ip 112.102.3.69 --batch-size 80 --http-workers 2 --sql-workers 2 --dbname prometheus --port 1234 > /dev/null 2>&1 &
 ```
-
 There are several options can be set:
 
 ```sh
@@ -79,7 +73,7 @@ Add the following to your prometheus's configuration `prometheus.yml` :
 ```yaml
 remote_write:
   - url: "http://localhost:1234/receive"
-
+    
 remote_read:
   - url: "http://localhost:1234/read"
 ```
@@ -89,13 +83,11 @@ Then start Prometheus:
 ```
  prometheus
 ```
-
 Then you can check the TDengine if there is super table and tables.
 
 ## Check the TDengine tables and datas
 
 Use the taos client shell to query the result.
-
 ```
 Welcome to the TDengine shell from linux, client version:1.6.4.0 server version:1.6.4.0
 Copyright (c) 2017 by TAOS Data, Inc. All rights reserved.
@@ -135,16 +127,14 @@ Query OK, 3029 row(s) in set (0.060828s)
 ```
 
 ## Support Kubernates liveness probe
-
 The blm_prometheus support the liveness probe.
 
-When the service is running, GET the url`http://ip:port/health` will return 200 OK response which means the service is
-running healthy. If no response, means the service is dead and need to restart it.
+When the service is running, GET the url`http://ip:port/health` will return 200 OK response which means the service is running healthy. If no response, means the service is dead and need to restart it.
+
 
 ## Limitations
 
-The TDengine limits the length of super table name, so if the name of prometheus metric exceeds 60 byte, it will be
-truncated to first 60 bytes. And the length of label name is limited within 50 byte.
+The TDengine limits the length of super table name, so if the name of prometheus metric exceeds 60 byte, it will be truncated to first 60 bytes. And the length of label name is limited within 50 byte.
 
 
 [TDengine]:https://www.github.com/Taosdata/TDengine
