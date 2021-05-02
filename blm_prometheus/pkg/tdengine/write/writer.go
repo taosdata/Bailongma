@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 TAOS Data, Inc. <jhtao@taosdata.com>
+ * Copyright (c) 2021 TAOS Data, Inc. <jhtao@taosdata.com>
  *
  * This program is free software: you can use, redistribute, and/or modify
  * it under the terms of the GNU Affero General Public License, version 3
@@ -48,7 +48,7 @@ func NewProcessor() *WriterProcessor {
 func (p *WriterProcessor) Process(req *prompb.WriteRequest) error {
 	db, err := sql.Open(DriverName, DbUser+":"+DbPassword+"@/tcp("+DaemonIP+")/"+DbName)
 	if err != nil {
-		log.Errorln("Open database error: %s\n", err)
+		log.ErrorLogger.Printf("Open database error: %s\n", err)
 	}
 	defer db.Close()
 
@@ -131,8 +131,8 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 			tm := t / 1000
 			ns = t - tm*1000
 		}
-		log.Debugf(" Ts: %s, value: %f, ", time.Unix(t/1000, ns), ts.Samples[0].Value)
-		log.Debugln(ts)
+		log.DebugLogger.Printf(" Ts: %s, value: %f, ", time.Unix(t/1000, ns), ts.Samples[0].Value)
+		log.DebugLogger.Println(ts)
 	}
 
 	if !hasName {
@@ -151,19 +151,19 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 		if err == nil { //query tdengine table success!
 			status := stbSt["status"].(string)
 			if status == "succ" { //yes, the super table was already created in TDengine
-				taostaglist := list.New()
-				taostagmap := make(map[string]string)
+				taosTagList := list.New()
+				taosTagMap := make(map[string]string)
 				dt := stbSt["data"]
 				for _, fd := range dt.([]interface{}) {
 					fdc := fd.([]interface{})
 					if fdc[3].(string) == "tag" && fdc[0].(string) != "taghash" {
-						tmpstr := fdc[0].(string)
-						taostaglist.PushBack(tmpstr[2:])
-						taostagmap[tmpstr[2:]] = "y"
+						tmpStr := fdc[0].(string)
+						taosTagList.PushBack(tmpStr[2:])
+						taosTagMap[tmpStr[2:]] = "y"
 					}
 				}
-				nt.tagList = taostaglist
-				nt.tagMap = taostagmap
+				nt.tagList = taosTagList
+				nt.tagMap = taosTagMap
 				tbTagList = nt.tagList
 				tbTagMap = nt.tagMap
 				var sqlcmd string
@@ -180,7 +180,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 							sqlcmd = "alter table " + sTableName + " add tag t_" + k + TagStr + "\n"
 							_, err := execSql(sqlcmd, db)
 							if err != nil {
-								log.Infoln(err)
+								log.ErrorLogger.Println(err)
 								errorCode := fmt.Sprintf("%s", err)
 								if strings.Contains(errorCode, "duplicated column names") {
 									tbTagList.PushBack(k)
@@ -208,11 +208,11 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 				if err == nil {
 					IsSTableCreated.Store(sTableName, nt)
 				} else {
-					log.Infoln(err)
+					log.ErrorLogger.Println(err)
 				}
 			}
 		} else { //query TDengine table error
-			log.Infoln(err)
+			log.ErrorLogger.Println(err)
 		}
 	} else {
 		nTag := schema.(nameTag)
@@ -232,7 +232,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 					sqlcmd = "alter table " + sTableName + " add tag t_" + k + TagStr + "\n"
 					_, err := execSql(sqlcmd, db)
 					if err != nil {
-						log.Infoln(err)
+						log.ErrorLogger.Println(err)
 						errorCode := fmt.Sprintf("%s", err)
 						if strings.Contains(errorCode, "duplicated column names") {
 							tbTagList.PushBack(k)
@@ -249,12 +249,12 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 		}
 	}
 
-	tbnhash := "MD5_" + md5V2(tbn)
-	_, tbcreated := IsTableCreated.Load(tbnhash)
+	tableNameHash := "MD5_" + md5V2(tbn)
+	_, tbcreated := IsTableCreated.Load(tableNameHash)
 
 	if !tbcreated {
 		var sqlcmdhead, sqlcmd string
-		sqlcmdhead = "create table if not exists " + tbnhash + " using " + sTableName + " tags(\""
+		sqlcmdhead = "create table if not exists " + tableNameHash + " using " + sTableName + " tags(\""
 		sqlcmd = ""
 		i := 0
 		for e := tbTagList.Front(); e != nil; e = e.Next() {
@@ -291,10 +291,10 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 		sqlcmd = sqlcmdhead + md5V2(tagHash) + "\"," + sqlcmd
 		_, err := execSql(sqlcmd, db)
 		if err == nil {
-			IsTableCreated.Store(tbnhash, true)
+			IsTableCreated.Store(tableNameHash, true)
 		}
 	}
-	serializeTDengine(ts, tbnhash, db)
+	serializeTDengine(ts, tableNameHash, db)
 	return nil
 }
 
@@ -318,7 +318,7 @@ func queryTableStruct(tbname string) string {
 	resp, err := client.Do(req)
 
 	if err != nil {
-		log.Infoln(err)
+		log.ErrorLogger.Println(err)
 		fmt.Println(err)
 		return ""
 	} else {
@@ -333,11 +333,11 @@ func execSql(sqlcmd string, db *sql.DB) (sql.Result, error) {
 		return nil, nil
 	}
 	if DebugPrt == 2 {
-		log.Debugln(sqlcmd)
+		log.DebugLogger.Println(sqlcmd)
 	}
 	res, err := db.Exec(sqlcmd)
 	if err != nil {
-		log.Infof("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
+		log.InfoLogger.Printf("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
 
 	}
 	return res, err

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 TAOS Data, Inc. <jhtao@taosdata.com>
+ * Copyright (c) 2021 TAOS Data, Inc. <jhtao@taosdata.com>
  *
  * This program is free software: you can use, redistribute, and/or modify
  * it under the terms of the GNU Affero General Public License, version 3
@@ -37,7 +37,7 @@ func NewProcessor() *ReaderProcessor {
 func (p *ReaderProcessor) Process(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 	db, err := sql.Open(write.DriverName, write.DbUser+":"+write.DbPassword+"@/tcp("+write.DaemonIP+")/"+write.DbName)
 	if err != nil {
-		log.Errorf("Open database error: %s\n", err)
+		log.ErrorLogger.Printf("Open database error: %s\n", err)
 	}
 	defer db.Close()
 	labelsToSeries := map[string]*prompb.TimeSeries{}
@@ -47,7 +47,7 @@ func (p *ReaderProcessor) Process(req *prompb.ReadRequest) (*prompb.ReadResponse
 		if err != nil {
 			return nil, err
 		}
-		log.Infof("Executed query：%s\n", command)
+		log.InfoLogger.Printf("Executed query：%s\n", command)
 
 		rows, err := db.Query(command)
 		if err != nil {
@@ -142,10 +142,10 @@ func (p *ReaderProcessor) Process(req *prompb.ReadRequest) (*prompb.ReadResponse
 		},
 	}
 	for _, ts := range labelsToSeries {
-		log.Infof("ts size: %d\n", ts.Size())
+		log.InfoLogger.Printf("ts size: %d\n", ts.Size())
 		resp.Results[0].Timeseries = append(resp.Results[0].Timeseries, ts)
 	}
-	log.Infof("Returned response #timeseries: %d\n", len(labelsToSeries))
+	log.InfoLogger.Printf("Returned response #timeseries: %d\n", len(labelsToSeries))
 	return &resp, nil
 }
 
@@ -201,7 +201,7 @@ func buildQuery(q *prompb.Query) (string, string, error) {
 		return "", "", fmt.Errorf("unknown tableName")
 	}
 
-	log.Infof("startTime：%d ,endTime:%d\n", q.StartTimestampMs, q.EndTimestampMs)
+	log.InfoLogger.Printf("startTime：%d ,endTime:%d\n", q.StartTimestampMs, q.EndTimestampMs)
 	matchers = append(matchers, fmt.Sprintf("ts >= %v", q.StartTimestampMs))
 	matchers = append(matchers, fmt.Sprintf("ts <= %v", q.EndTimestampMs))
 

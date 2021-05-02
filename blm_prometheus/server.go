@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 TAOS Data, Inc. <jhtao@taosdata.com>
+ * Copyright (c) 2021 TAOS Data, Inc. <jhtao@taosdata.com>
  *
  * This program is free software: you can use, redistribute, and/or modify
  * it under the terms of the GNU Affero General Public License, version 3
@@ -127,12 +127,12 @@ func init() {
 	// init logger
 	logger.Init(logNameDefault)
 
-	logger.Infof("host: ip")
-	logger.Infof(write.DaemonIP)
-	logger.Infof("  port: ")
-	logger.Infof(write.RWPort)
-	logger.Infof("  database: ")
-	logger.Infoln(write.DbName)
+	logger.InfoLogger.Print("host: ip")
+	logger.InfoLogger.Print(write.DaemonIP)
+	logger.InfoLogger.Print("  port: ")
+	logger.InfoLogger.Print(write.RWPort)
+	logger.InfoLogger.Print("  database: ")
+	logger.InfoLogger.Println(write.DbName)
 
 }
 
@@ -220,33 +220,33 @@ func readHandle(reader reader) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			logger.Errorf("Read error: %s\n", err)
+			logger.ErrorLogger.Printf("Read error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			logger.Errorf("Decode error: %s\n", err)
+			logger.ErrorLogger.Printf("Decode error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		var req prompb.ReadRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			logger.Errorf("Unmarshal error: %s\n", err)
+			logger.ErrorLogger.Printf("Unmarshal error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		logger.Infof("req info== %v\n", req)
+		logger.InfoLogger.Printf("req info== %v\n", req)
 		var resp *prompb.ReadResponse
 		resp, err = reader.Read(&req)
 		if err != nil {
-			logger.Errorf("Error executing query req: %s,storage:%s,err:%s\n", req, reader.Name(), err)
+			logger.ErrorLogger.Printf("Error executing query req: %s,storage:%s,err:%s\n", req, reader.Name(), err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		data, err := proto.Marshal(resp)
 		if err != nil {
-			logger.Errorf("proto marshal err :%s\n", err)
+			logger.ErrorLogger.Printf("proto marshal err :%s\n", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -256,7 +256,7 @@ func readHandle(reader reader) http.Handler {
 
 		compressed = snappy.Encode(nil, data)
 		if _, err := w.Write(compressed); err != nil {
-			logger.Errorf("Write response err :%s\n", err)
+			logger.ErrorLogger.Printf("Write response err :%s\n", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -303,7 +303,7 @@ func createDatabase(dbName string) {
 
 func checkErr(err error) {
 	if err != nil {
-		logger.Infoln(err)
+		logger.InfoLogger.Println(err)
 	}
 }
 
@@ -311,7 +311,7 @@ func processBatches(workerId int) {
 	var i int
 	db, err := sql.Open(write.DriverName, write.DbUser+":"+write.DbPassword+"@/tcp("+write.DaemonIP+")/"+write.DbName)
 	if err != nil {
-		logger.Infof("processBatches Open database error: %s\n", err)
+		logger.ErrorLogger.Printf("processBatches Open database error: %s\n", err)
 		var count int = 5
 		for {
 			if err != nil && count > 0 {
@@ -320,7 +320,7 @@ func processBatches(workerId int) {
 				count--
 			} else {
 				if err != nil {
-					logger.Infof("processBatches Error: %s open database\n", err)
+					logger.ErrorLogger.Printf("processBatches Error: %s open database\n", err)
 					return
 				}
 				break
@@ -340,7 +340,7 @@ func processBatches(workerId int) {
 			i = 1
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
-				logger.Infof("processBatches error %s", err)
+				logger.ErrorLogger.Printf("processBatches error %s\n", err)
 				var count int = 2
 				for {
 					if err != nil && count > 0 {
@@ -349,7 +349,7 @@ func processBatches(workerId int) {
 						count--
 					} else {
 						if err != nil {
-							logger.Infof("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
+							logger.ErrorLogger.Printf("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
 						}
 						break
 					}
@@ -370,7 +370,7 @@ func processBatches(workerId int) {
 					count--
 				} else {
 					if err != nil {
-						logger.Infof("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
+						logger.ErrorLogger.Printf("Error: %s sqlcmd: %s\n", err, strings.Join(sqlcmd, ""))
 					}
 					break
 				}
