@@ -40,30 +40,13 @@ type nameTag struct {
 	tagList *list.List
 }
 
-var (
-	daemonIP      string
-	daemonName    string
-	batchSize     int
-	bufferSize    int
-	dbName        string
-	dbUser        string
-	dbPassword    string
-	rwPort        string
-	apiPort       string
-	debugPrt      int
-	tagLen        int
-	tagLimit      int = 1024
-	tagNumLimit   int
-	tablePervNode int
-)
-
 func NewProcessor() *WriterProcessor {
 	processor := &WriterProcessor{}
 	return processor
 }
 
 func (p *WriterProcessor) Process(req *prompb.WriteRequest) error {
-	db, err := sql.Open(DriverName, dbUser+":"+dbPassword+"@/tcp("+daemonIP+")/"+dbName)
+	db, err := sql.Open(DriverName, DbUser+":"+DbPassword+"@/tcp("+DaemonIP+")/"+DbName)
 	if err != nil {
 		log.Errorln("Open database error: %s\n", err)
 	}
@@ -107,7 +90,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 	tagMap := make(map[string]string)
 	tbTagMap := make(map[string]string)
 	m := make(model.Metric, len(ts.Labels))
-	tagNum := tagNumLimit
+	tagNum := TagNumLimit
 	var hasName bool = false
 	var metricsName string
 	var tbn string = ""
@@ -133,15 +116,15 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 		if j <= tagNum {
 			OrderInsertS(ln, tbTagList)
 			//tbTagList.PushBack(ln)
-			if len(s) > tagLen {
-				s = s[:tagLen]
+			if len(s) > TagLen {
+				s = s[:TagLen]
 			}
 			tbTagMap[ln] = "y"
 		}
 		tagMap[ln] = s
 	}
 
-	if debugPrt == 2 {
+	if DebugPrt == 2 {
 		t := ts.Samples[0].Timestamp
 		var ns int64 = 0
 		if t/1000000000 > 10 {
@@ -191,7 +174,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 						continue
 					}
 					i++
-					if i < tagNumLimit {
+					if i < TagNumLimit {
 						_, ok := tbTagMap[k]
 						if !ok {
 							sqlcmd = "alter table " + sTableName + " add tag t_" + k + TagStr + "\n"
@@ -243,7 +226,7 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 				continue
 			}
 			i++
-			if i < tagNumLimit {
+			if i < TagNumLimit {
 				_, ok := tbTagMap[k]
 				if !ok {
 					sqlcmd = "alter table " + sTableName + " add tag t_" + k + TagStr + "\n"
@@ -276,8 +259,8 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 		i := 0
 		for e := tbTagList.Front(); e != nil; e = e.Next() {
 			tagValue, has := tagMap[e.Value.(string)]
-			if len(tagValue) > tagLen {
-				tagValue = tagValue[:tagLen]
+			if len(tagValue) > TagLen {
+				tagValue = tagValue[:TagLen]
 			}
 			if i == 0 {
 				if has {
@@ -327,11 +310,11 @@ func tableNameEscape(name string) string {
 
 func queryTableStruct(tbname string) string {
 	client := new(http.Client)
-	s := fmt.Sprintf("describe %s.%s", dbName, tbname)
+	s := fmt.Sprintf("describe %s.%s", DbName, tbname)
 	body := strings.NewReader(s)
-	req, _ := http.NewRequest("GET", "http://"+TdUrl+":"+apiPort+"/rest/sql", body)
+	req, _ := http.NewRequest("GET", "http://"+TdUrl+":"+ApiPort+"/rest/sql", body)
 	//fmt.Println("http://" + tdurl + ":" + apiPort + "/rest/sql" + s)
-	req.SetBasicAuth(dbUser, dbPassword)
+	req.SetBasicAuth(DbUser, DbPassword)
 	resp, err := client.Do(req)
 
 	if err != nil {
@@ -349,7 +332,7 @@ func execSql(sqlcmd string, db *sql.DB) (sql.Result, error) {
 	if len(sqlcmd) < 1 {
 		return nil, nil
 	}
-	if debugPrt == 2 {
+	if DebugPrt == 2 {
 		log.Debugln(sqlcmd)
 	}
 	res, err := db.Exec(sqlcmd)
