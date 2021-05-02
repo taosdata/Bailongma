@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"io"
 	"os"
@@ -91,6 +92,32 @@ func TestSerializationfs(t *testing.T) {
 	}
 	_, writer := buildClients()
 	ProcessReq(req, writer)
+}
+
+func TestRead(t *testing.T) {
+	var req prompb.ReadRequest
+	var query prompb.Query
+	var nameLabel = prompb.LabelMatcher{
+		Type: prompb.LabelMatcher_EQ,
+		Name: model.MetricNameLabel,
+		// inner metric
+		Value: "go_goroutines",
+	}
+	var matchers = prompb.LabelMatcher{
+		Type:  prompb.LabelMatcher_EQ,
+		Name:  "job",
+		Value: "prometheus",
+	}
+
+	query.StartTimestampMs = 1618085130781
+	query.EndTimestampMs = 1619863860781
+	query.Matchers = append(query.Matchers, &matchers, &nameLabel)
+	req.Queries = append(req.Queries, &query)
+
+	reader, _ := buildClients()
+
+	reader.Read(&req)
+
 }
 
 func TestTimeData(t *testing.T) {

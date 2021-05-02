@@ -108,7 +108,7 @@ func (p *ReaderProcessor) Process(req *prompb.ReadRequest) (*prompb.ReadResponse
 						continue
 					}
 					labelPairs = append(labelPairs, &prompb.Label{
-						Name:  k,
+						Name:  strings.Replace(k, "t_", "", 1),
 						Value: row[k],
 					})
 				}
@@ -202,8 +202,8 @@ func buildQuery(q *prompb.Query) (string, string, error) {
 	}
 
 	log.InfoLogger.Printf("startTime：%d ,endTime:%d\n", q.StartTimestampMs, q.EndTimestampMs)
-	matchers = append(matchers, fmt.Sprintf("ts >= %v", q.StartTimestampMs))
-	matchers = append(matchers, fmt.Sprintf("ts <= %v", q.EndTimestampMs))
+	matchers = append(matchers, fmt.Sprintf("ts >= %d", q.StartTimestampMs))
+	matchers = append(matchers, fmt.Sprintf("ts <= %d", q.EndTimestampMs))
 
 	return tableName, fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY ts",
 		tableName, strings.Join(matchers, " AND ")), nil
