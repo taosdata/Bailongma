@@ -21,6 +21,7 @@ var _ = func() bool {
 	testing.Init()
 	return true
 }()
+
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if testing.Short() {
@@ -53,19 +54,19 @@ func TestSerializationfs(t *testing.T) {
 	var tse prompb.TimeSeries
 	var sample prompb.Sample
 	var labels []*prompb.Label
-	labelValue1 := prompb.Label{Name: "__name__",Value: "testLabel"}
-	labelValue2 := prompb.Label{Name: "instance",Value: "testTagInstance"}
-	labels = append(labels,&labelValue1,&labelValue2)
+	labelValue1 := prompb.Label{Name: "__name__", Value: "testLabel"}
+	labelValue2 := prompb.Label{Name: "instance", Value: "testTagInstance"}
+	labels = append(labels, &labelValue1, &labelValue2)
 
-	testfile,err := os.OpenFile(promPath,os.O_RDWR,0666)
+	testfile, err := os.OpenFile(promPath, os.O_RDWR, 0666)
 	if err != nil {
-        fmt.Println("Open file error!", err)
-        return
+		fmt.Println("Open file error!", err)
+		return
 	}
 	defer testfile.Close()
 	fmt.Println(promPath)
 	buf := bufio.NewReader(testfile)
-	i :=0
+	i := 0
 	for {
 		line, err := buf.ReadString('\n')
 		if err != nil {
@@ -73,25 +74,26 @@ func TestSerializationfs(t *testing.T) {
 				fmt.Println("File read ok! line:", i)
 				break
 			} else {
-				fmt.Println("Read file error!",err)
-				return 
+				fmt.Println("Read file error!", err)
+				return
 			}
 		}
-		if strings.Contains(line,"server.go:201:")  {
-			sa := strings.Split(line," ")
-			sample.Timestamp, _ = strconv.ParseInt(sa[7][:(len(sa[7])-1)],10,64)
-			sample.Value,_  = strconv.ParseFloat(sa[9][:(len(sa[9])-1)],64)
-			tse.Samples = append(tse.Samples,sample)
+		if strings.Contains(line, "server.go:201:") {
+			sa := strings.Split(line, " ")
+			sample.Timestamp, _ = strconv.ParseInt(sa[7][:(len(sa[7])-1)], 10, 64)
+			sample.Value, _ = strconv.ParseFloat(sa[9][:(len(sa[9])-1)], 64)
+			tse.Samples = append(tse.Samples, sample)
 			tse.Labels = labels
-			ts = append(ts,&tse)
+			ts = append(ts, &tse)
 			req.Timeseries = ts
 			fmt.Print(ts)
 		}
 	}
-	ProcessReq(req)
+	_, writer := buildClients()
+	ProcessReq(req, writer)
 }
 
-func TestData(t *testing.T)  {
+func TestTimeData(t *testing.T) {
 	var timeStampValue = 1619870400000
 	fmt.Println(toTimestamp(int64(timeStampValue)).Format(time.RFC3339))
 }

@@ -17,11 +17,9 @@ package main
 
 import (
 	"blm_prometheus/pkg/tdengine"
+	"blm_prometheus/pkg/tdengine/write"
 	"bufio"
-	"container/list"
-	"crypto/md5"
 	"database/sql"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -32,7 +30,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,11 +42,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	_ "github.com/taosdata/driver-go/taosSql"
 )
-
-type nameTag struct {
-	tagMap  map[string]string
-	tagList *list.List
-}
 
 type fieldDescription struct {
 	fileName   string
@@ -68,35 +60,19 @@ type tableStruct struct {
 type reader interface {
 	Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error)
 	Name() string
-	HealthCheck() error
 }
 
-var (
-	daemonIP      string
-	daemonName    string
-	httpWorkers   int
-	sqlWorkers    int
-	batchSize     int
-	bufferSize    int
-	dbName        string
-	dbUser        string
-	dbPassword    string
-	rwPort        string
-	apiPort       string
-	debugPrt      int
-	tagLen        int
-	tagLimit      int = 1024
-	tagNumLimit   int
-	tablePervNode int
-)
+type writer interface {
+	Write(req *prompb.WriteRequest) error
+	Name() string
+	Check(r *http.Request) (string, error)
+}
 
 // Global vars
 var (
 	bufPool         sync.Pool
-	batchChannels   []chan string              //multi table one chan
 	nodeChannels    []chan prompb.WriteRequest //multi node one chan
 	inputDone       chan struct{}
-	workersGroup    sync.WaitGroup
 	reportTags      [][2]string
 	reportHostname  string
 	taosDriverName  string = "taosSql"
@@ -115,73 +91,94 @@ var scratchBufPool = &sync.Pool{
 
 // Parse args:
 func init() {
-	flag.StringVar(&daemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
-	flag.StringVar(&daemonName, "tdengine-name", "", "TDengine host Name. in K8S, could be used to lookup TDengine's IP")
-	flag.StringVar(&apiPort, "tdengine-api-port", "6041", "TDengine restful API port")
-	flag.IntVar(&batchSize, "batch-size", 100, "Batch size (input items).")
-	flag.IntVar(&httpWorkers, "http-workers", 1, "Number of parallel http requests handler .")
-	flag.IntVar(&sqlWorkers, "sql-workers", 1, "Number of parallel sql handler.")
-	flag.StringVar(&dbName, "dbname", "prometheus", "Database name where to store metrics")
-	flag.StringVar(&dbUser, "dbuser", "root", "User for host to send result metrics")
-	flag.StringVar(&dbPassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
-	flag.StringVar(&rwPort, "port", "10203", "remote write port")
-	flag.IntVar(&debugPrt, "debugprt", 0, "if 0 not print, if 1 print the sql")
-	flag.IntVar(&tagLen, "tag-length", 128, "the max length of tag string,default is 30")
-	flag.IntVar(&bufferSize, "buffersize", 100, "the buffer size of metrics received")
-	flag.IntVar(&tagNumLimit, "tag-num", 128, "the number of tags in a super table, default is 8")
+	flag.StringVar(&write.DaemonIP, "tdengine-ip", "127.0.0.1", "TDengine host IP.")
+	flag.StringVar(&write.DaemonName, "tdengine-name", "", "TDengine host Name. in K8S, could be used to lookup TDengine's IP")
+	flag.StringVar(&write.ApiPort, "tdengine-api-port", "6041", "TDengine restful API port")
+	flag.IntVar(&write.BatchSize, "batch-size", 100, "Batch size (input items).")
+	flag.IntVar(&write.HttpWorkers, "http-workers", 1, "Number of parallel http requests handler .")
+	flag.IntVar(&write.SqlWorkers, "sql-workers", 1, "Number of parallel sql handler.")
+	flag.StringVar(&write.DbName, "dbname", "prometheus", "Database name where to store metrics")
+	flag.StringVar(&write.DbUser, "dbuser", "root", "User for host to send result metrics")
+	flag.StringVar(&write.DbPassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
+	flag.StringVar(&write.RWPort, "port", "10203", "remote write port")
+	flag.IntVar(&write.DebugPrt, "debugprt", 0, "if 0 not print, if 1 print the sql")
+	flag.IntVar(&write.TagLen, "tag-length", 128, "the max length of tag string,default is 30")
+	flag.IntVar(&write.BufferSize, "buffersize", 100, "the buffer size of metrics received")
+	flag.IntVar(&write.TagNumLimit, "tag-num", 128, "the number of tags in a super table, default is 8")
 	//flag.IntVar(&tablepervnode, "table-num", 10000, "the number of tables per TDengine Vnode can create, default 10000")
 
 	flag.Parse()
+	write.DriverName = taosDriverName
 
-	if daemonName != "" {
+	if write.DaemonName != "" {
 		// look DNS A records
-		s, _ := net.LookupIP(daemonName)
-		daemonIP = fmt.Sprintf("%s", s[0])
-		daemonIP = daemonIP + ":0"
-		fmt.Println("daemonIP:" + daemonIP)
+		s, _ := net.LookupIP(write.DaemonName)
+		write.DaemonIP = fmt.Sprintf("%s", s[0])
+		write.DaemonIP = write.DaemonIP + ":0"
+		fmt.Println("daemonIP:" + write.DaemonIP)
 
-		tdUrl = daemonName
+		write.TdUrl = write.DaemonName
 	} else {
-		tdUrl = daemonIP
-		daemonIP = daemonIP + ":0"
+		write.TdUrl = write.DaemonIP
+		write.DaemonIP = write.DaemonIP + ":0"
 	}
 
-	tagStr = fmt.Sprintf(" binary(%d)", tagLen)
+	write.TagStr = fmt.Sprintf(" binary(%d)", write.TagLen)
 	// init logger
 	logger.Init(logNameDefault)
 
 	logger.Infof("host: ip")
-	logger.Infof(daemonIP)
+	logger.Infof(write.DaemonIP)
 	logger.Infof("  port: ")
-	logger.Infof(rwPort)
+	logger.Infof(write.RWPort)
 	logger.Infof("  database: ")
-	logger.Infoln(dbName)
+	logger.Infoln(write.DbName)
 
 }
 
 func main() {
 
-	for i := 0; i < httpWorkers; i++ {
-		nodeChannels = append(nodeChannels, make(chan prompb.WriteRequest, bufferSize))
+	for i := 0; i < write.HttpWorkers; i++ {
+		nodeChannels = append(nodeChannels, make(chan prompb.WriteRequest, write.BufferSize))
 	}
 
-	createDatabase(dbName)
+	createDatabase(write.DbName)
 
-	for i := 0; i < httpWorkers; i++ {
-		workersGroup.Add(1)
-		go NodeProcess(i)
+	reader, writer := buildClients()
+
+	for i := 0; i < write.HttpWorkers; i++ {
+		write.WorkersGroup.Add(1)
+		go NodeProcess(i, writer)
 	}
 
-	for i := 0; i < sqlWorkers; i++ {
-		batchChannels = append(batchChannels, make(chan string, batchSize))
+	for i := 0; i < write.SqlWorkers; i++ {
+		write.BatchChannels = append(write.BatchChannels, make(chan string, write.BatchSize))
 	}
 
-	for i := 0; i < sqlWorkers; i++ {
-		workersGroup.Add(1)
+	for i := 0; i < write.SqlWorkers; i++ {
+		write.WorkersGroup.Add(1)
 		go processBatches(i)
 	}
 
-	http.HandleFunc("/receive", func(w http.ResponseWriter, r *http.Request) {
+	http.Handle("/receive", writeHandle())
+	http.Handle("/check", checkHandle(writer))
+	http.Handle("/health", healthHandle())
+	if write.DebugPrt == 5 {
+		TestSerialization()
+	}
+	// read
+	http.Handle("/read", readHandle(reader))
+	log.Fatal(http.ListenAndServe(":"+write.RWPort, nil))
+
+}
+
+func buildClients() (reader, writer) {
+	tdClient := tdengine.NewClient()
+	return tdClient, tdClient
+}
+
+func writeHandle() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		addr := strings.Split(r.RemoteAddr, ":")
 		idx := TAOSHashID([]byte(addr[0]))
@@ -203,83 +200,39 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		nodeChannels[idx%httpWorkers] <- req
+		nodeChannels[idx%write.HttpWorkers] <- req
 	})
-	http.HandleFunc("/check", func(w http.ResponseWriter, r *http.Request) {
-
-		compressed, err := ioutil.ReadAll(r.Body)
+}
+func checkHandle(writer writer) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		res, err := writer.Check(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		//logger.Infoln()(string(compressed))
-		var output string = ""
-		schema, ok := IsSTableCreated.Load(string(compressed))
-		if !ok {
-			output = "the stable is not created!"
-		} else {
-			nTag := schema.(nameTag)
-			tbTagList := nTag.tagList
-			tbTagMap := nTag.tagMap
-			output = "tags: "
-			for e := tbTagList.Front(); e != nil; e = e.Next() {
-				output = output + e.Value.(string) + " | "
-			}
-			output = output + "\ntbTagMap: "
-			s := fmt.Sprintln(tbTagMap)
-			output = output + s
-		}
+		s := fmt.Sprintf("query result:\n %s\n", res)
 
-		res := queryTableStruct(string(compressed))
-		output = output + "\nTable structure:\n" + res
-		s := fmt.Sprintf("query result:\n %s\n", output)
-		//logger.Infoln()(s)
 		w.Write([]byte(s))
 		w.WriteHeader(http.StatusOK)
 	})
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-	if debugPrt == 5 {
-		TestSerialization()
-	}
-	// read
-	http.Handle("/read", readHandle())
-	log.Fatal(http.ListenAndServe(":"+rwPort, nil))
-
 }
-
-func buildClients() reader {
-	config := tdengine.Config{
-		DbName:     dbName,
-		DbPassword: dbPassword,
-		DbUser:     dbUser,
-		DaemonIP:   daemonIP,
-		DaemonName: daemonName,
-		Table:      "",
-	}
-	tdClient := tdengine.NewClient(&config)
-	return tdClient
-}
-
-func readHandle() http.Handler {
+func readHandle(reader reader) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reader := buildClients()
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			//log.Fatalf("Read error: %s\n", err)
+			logger.Errorf("Read error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
-			logger.Infof("Decode error: %s\n", err)
+			logger.Errorf("Decode error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		var req prompb.ReadRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
-			logger.Infof("Unmarshal error: %s\n", err)
+			logger.Errorf("Unmarshal error: %s\n", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -287,12 +240,13 @@ func readHandle() http.Handler {
 		var resp *prompb.ReadResponse
 		resp, err = reader.Read(&req)
 		if err != nil {
-			logger.Infof("msg", "Error executing query", "query", req, "storage", reader.Name(), "err", err)
+			logger.Errorf("Error executing query req: %s,storage:%s,err:%s\n", req, reader.Name(), err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		data, err := proto.Marshal(resp)
 		if err != nil {
+			logger.Errorf("proto marshal err :%s\n", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -302,29 +256,16 @@ func readHandle() http.Handler {
 
 		compressed = snappy.Encode(nil, data)
 		if _, err := w.Write(compressed); err != nil {
+			logger.Errorf("Write response err :%s\n", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	})
 }
-func queryTableStruct(tbname string) string {
-	client := new(http.Client)
-	s := fmt.Sprintf("describe %s.%s", dbName, tbname)
-	body := strings.NewReader(s)
-	req, _ := http.NewRequest("GET", "http://"+tdUrl+":"+apiPort+"/rest/sql", body)
-	//fmt.Println("http://" + tdurl + ":" + apiPort + "/rest/sql" + s)
-	req.SetBasicAuth(dbUser, dbPassword)
-	resp, err := client.Do(req)
-
-	if err != nil {
-		logger.Infoln(err)
-		fmt.Println(err)
-		return ""
-	} else {
-		compressed, _ := ioutil.ReadAll(resp.Body)
-		defer resp.Body.Close()
-		return string(compressed)
-	}
+func healthHandle() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 }
 
 func TAOSHashID(ba []byte) int {
@@ -335,271 +276,19 @@ func TAOSHashID(ba []byte) int {
 	return sum
 }
 
-func NodeProcess(workerid int) error {
-	for req := range nodeChannels[workerid] {
-		ProcessReq(req)
+func NodeProcess(workerId int, writer writer) error {
+	for req := range nodeChannels[workerId] {
+		ProcessReq(req, writer)
 	}
 	return nil
 }
 
-func ProcessReq(req prompb.WriteRequest) error {
-	db, err := sql.Open(taosDriverName, dbUser+":"+dbPassword+"@/tcp("+daemonIP+")/"+dbName)
-	if err != nil {
-		log.Fatalf("Open database error: %s\n", err)
-	}
-	defer db.Close()
-
-	for _, ts := range req.Timeseries {
-		err = HandleStable(ts, db)
-	}
-	return err
-}
-
-func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
-	tagList := list.New()
-	tbTagList := list.New()
-	tagMap := make(map[string]string)
-	tbTagMap := make(map[string]string)
-	m := make(model.Metric, len(ts.Labels))
-	tagNum := tagNumLimit
-	var hasName bool = false
-	var metricsName string
-	var tbn string = ""
-	var nt nameTag
-
-	j := 0
-	for _, l := range ts.Labels {
-		m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-
-		if string(l.Name) == model.MetricNameLabel {
-			metricsName = string(l.Value)
-			tbn += metricsName
-			hasName = true
-			continue
-		}
-		j++
-		ln := strings.ToLower(string(l.Name))
-		OrderInsertS(ln, tagList)
-		//tagList.PushBack(ln)
-		s := string(l.Value)
-		tbn += s
-		//tagHash += s
-		if j <= tagNum {
-			OrderInsertS(ln, tbTagList)
-			//tbTagList.PushBack(ln)
-			if len(s) > tagLen {
-				s = s[:tagLen]
-			}
-			tbTagMap[ln] = "y"
-		}
-		tagMap[ln] = s
-	}
-
-	if debugPrt == 2 {
-		t := ts.Samples[0].Timestamp
-		var ns int64 = 0
-		if t/1000000000 > 10 {
-			tm := t / 1000
-			ns = t - tm*1000
-		}
-		logger.Debugf(" Ts: %s, value: %f, ", time.Unix(t/1000, ns), ts.Samples[0].Value)
-		logger.Debugln(ts)
-	}
-
-	if !hasName {
-		info := fmt.Sprintf("no name metric")
-		panic(info)
-	}
-	sTableName := tableNameEscape(metricsName)
-	var ok bool
-	schema, ok := IsSTableCreated.Load(sTableName)
-	if !ok { // no local record of super table structure
-		nt.tagList = tbTagList
-		nt.tagMap = tbTagMap
-		stbDescription := queryTableStruct(sTableName) //query the super table from TDengine
-		var stbSt map[string]interface{}
-		err := json.Unmarshal([]byte(stbDescription), &stbSt)
-		if err == nil { //query tdengine table success!
-			status := stbSt["status"].(string)
-			if status == "succ" { //yes, the super table was already created in TDengine
-				taostaglist := list.New()
-				taostagmap := make(map[string]string)
-				dt := stbSt["data"]
-				for _, fd := range dt.([]interface{}) {
-					fdc := fd.([]interface{})
-					if fdc[3].(string) == "tag" && fdc[0].(string) != "taghash" {
-						tmpstr := fdc[0].(string)
-						taostaglist.PushBack(tmpstr[2:])
-						taostagmap[tmpstr[2:]] = "y"
-					}
-				}
-				nt.tagList = taostaglist
-				nt.tagMap = taostagmap
-				tbTagList = nt.tagList
-				tbTagMap = nt.tagMap
-				var sqlcmd string
-				i := 0
-				for _, l := range ts.Labels {
-					k := strings.ToLower(string(l.Name))
-					if k == model.MetricNameLabel {
-						continue
-					}
-					i++
-					if i < tagNumLimit {
-						_, ok := tbTagMap[k]
-						if !ok {
-							sqlcmd = "alter table " + sTableName + " add tag t_" + k + tagStr + "\n"
-							_, err := execSql(dbName, sqlcmd, db)
-							if err != nil {
-								logger.Infoln(err)
-								errorCode := fmt.Sprintf("%s", err)
-								if strings.Contains(errorCode, "duplicated column names") {
-									tbTagList.PushBack(k)
-									//OrderInsertS(k, tbTagList)
-									tbTagMap[k] = "y"
-								}
-							} else {
-								tbTagList.PushBack(k)
-								//OrderInsertS(k, tbTagList)
-								tbTagMap[k] = "y"
-							}
-						}
-					}
-				}
-				IsSTableCreated.Store(sTableName, nt)
-			} else { // no, the super table haven't been created in TDengine, create it.
-				var sqlcmd string
-				sqlcmd = "create table if not exists " + sTableName + " (ts timestamp, value double) tags(taghash binary(34)"
-				for e := tbTagList.Front(); e != nil; e = e.Next() {
-					sqlcmd = sqlcmd + ",t_" + e.Value.(string) + tagStr
-				}
-				//annotlen = taglimit - i*taglen
-				//nt.annotlen = annotlen
-				//annotationstr := fmt.Sprintf(" binary(%d)", annotlen)
-				//sqlcmd = sqlcmd + ", annotation " + annotationstr + ")\n"
-				sqlcmd = sqlcmd + ")\n"
-				_, err := execSql(dbName, sqlcmd, db)
-				if err == nil {
-					IsSTableCreated.Store(sTableName, nt)
-				} else {
-					logger.Infoln(err)
-				}
-			}
-		} else { //query TDengine table error
-			logger.Infoln(err)
-		}
-	} else {
-		nTag := schema.(nameTag)
-		tbTagList = nTag.tagList
-		tbTagMap = nTag.tagMap
-		var sqlcmd string
-		i := 0
-		for _, l := range ts.Labels {
-			k := strings.ToLower(string(l.Name))
-			if k == model.MetricNameLabel {
-				continue
-			}
-			i++
-			if i < tagNumLimit {
-				_, ok := tbTagMap[k]
-				if !ok {
-					sqlcmd = "alter table " + sTableName + " add tag t_" + k + tagStr + "\n"
-					_, err := execSql(dbName, sqlcmd, db)
-					if err != nil {
-						logger.Infoln(err)
-						errorCode := fmt.Sprintf("%s", err)
-						if strings.Contains(errorCode, "duplicated column names") {
-							tbTagList.PushBack(k)
-							//OrderInsertS(k, tbTagList)
-							tbTagMap[k] = "y"
-						}
-					} else {
-						tbTagList.PushBack(k)
-						//OrderInsertS(k, tbTagList)
-						tbTagMap[k] = "y"
-					}
-				}
-			}
-		}
-	}
-
-	tbnhash := "MD5_" + md5V2(tbn)
-	_, tbcreated := IsTableCreated.Load(tbnhash)
-
-	if !tbcreated {
-		var sqlcmdhead, sqlcmd string
-		sqlcmdhead = "create table if not exists " + tbnhash + " using " + sTableName + " tags(\""
-		sqlcmd = ""
-		i := 0
-		for e := tbTagList.Front(); e != nil; e = e.Next() {
-			tagValue, has := tagMap[e.Value.(string)]
-			if len(tagValue) > tagLen {
-				tagValue = tagValue[:tagLen]
-			}
-			if i == 0 {
-				if has {
-					sqlcmd = sqlcmd + "\"" + tagValue + "\""
-				} else {
-					sqlcmd = sqlcmd + "null"
-				}
-				i++
-			} else {
-				if has {
-					sqlcmd = sqlcmd + ",\"" + tagValue + "\""
-				} else {
-					sqlcmd = sqlcmd + ",null"
-				}
-			}
-		}
-		var keys []string
-		var tagHash = ""
-		for t := range tagMap {
-			keys = append(keys, t)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			tagHash += tagMap[k]
-		}
-
-		sqlcmd = sqlcmd + ")\n"
-		sqlcmd = sqlcmdhead + md5V2(tagHash) + "\"," + sqlcmd
-		_, err := execSql(dbName, sqlcmd, db)
-		if err == nil {
-			IsTableCreated.Store(tbnhash, true)
-		}
-	}
-	serializeTDengine(ts, tbnhash, db)
-	return nil
-}
-
-func tableNameEscape(name string) string {
-	replaceColon := strings.ReplaceAll(name, ":", "_") // replace : in the metrics name to adapt the TDengine
-	replaceComma := strings.ReplaceAll(replaceColon, ".", "_")
-	stbName := strings.ReplaceAll(replaceComma, "-", "_")
-	if len(stbName) > 190 {
-		stbName = stbName[:190]
-	}
-	return stbName
-}
-
-func serializeTDengine(m *prompb.TimeSeries, tbn string, db *sql.DB) error {
-	idx := TAOSHashID([]byte(tbn))
-	sqlcmd := " " + tbn + " values("
-	vl := m.Samples[0].GetValue()
-	vls := strconv.FormatFloat(vl, 'E', -1, 64)
-
-	if vls == "NaN" {
-		vls = "null"
-	}
-	tl := m.Samples[0].GetTimestamp()
-	tls := strconv.FormatInt(tl, 10)
-	sqlcmd = sqlcmd + tls + "," + vls + ")\n"
-	batchChannels[idx%sqlWorkers] <- sqlcmd
-	return nil
+func ProcessReq(req prompb.WriteRequest, writer writer) error {
+	return writer.Write(&req)
 }
 
 func createDatabase(dbName string) {
-	db, err := sql.Open(taosDriverName, dbUser+":"+dbPassword+"@/tcp("+daemonIP+")/")
+	db, err := sql.Open(write.DriverName, write.DbUser+":"+write.DbPassword+"@/tcp("+write.DaemonIP+")/")
 	if err != nil {
 		log.Fatalf("Open database error: %s\n", err)
 	}
@@ -612,44 +301,22 @@ func createDatabase(dbName string) {
 	return
 }
 
-func execSql(dbName string, sqlcmd string, db *sql.DB) (sql.Result, error) {
-	if len(sqlcmd) < 1 {
-		return nil, nil
-	}
-	if debugPrt == 2 {
-		logger.Debugln(sqlcmd)
-	}
-	res, err := db.Exec(sqlcmd)
-	if err != nil {
-		logger.Infof("execSql Error: %s sqlcmd: %s\n", err, sqlcmd)
-
-	}
-	return res, err
-}
-
 func checkErr(err error) {
 	if err != nil {
 		logger.Infoln(err)
 	}
 }
 
-func md5V2(str string) string {
-	data := []byte(str)
-	has := md5.Sum(data)
-	md5str := fmt.Sprintf("%x", has)
-	return md5str
-}
-
-func processBatches(iworker int) {
+func processBatches(workerId int) {
 	var i int
-	db, err := sql.Open(taosDriverName, dbUser+":"+dbPassword+"@/tcp("+daemonIP+")/"+dbName)
+	db, err := sql.Open(write.DriverName, write.DbUser+":"+write.DbPassword+"@/tcp("+write.DaemonIP+")/"+write.DbName)
 	if err != nil {
 		logger.Infof("processBatches Open database error: %s\n", err)
 		var count int = 5
 		for {
 			if err != nil && count > 0 {
 				<-time.After(time.Second * 1)
-				_, err = sql.Open(taosDriverName, dbUser+":"+dbPassword+"@/tcp("+daemonIP+")/"+dbName)
+				_, err = sql.Open(taosDriverName, write.DbUser+":"+write.DbPassword+"@/tcp("+write.DaemonIP+")/"+write.DbName)
 				count--
 			} else {
 				if err != nil {
@@ -661,17 +328,16 @@ func processBatches(iworker int) {
 		}
 	}
 	defer db.Close()
-	sqlcmd := make([]string, batchSize+1)
+	sqlcmd := make([]string, write.BatchSize+1)
 	i = 0
 	sqlcmd[i] = "Insert into"
 	i++
-	//logger.Infof("processBatches")
-	for onepoint := range batchChannels[iworker] {
-		sqlcmd[i] = onepoint
+
+	for onePoint := range write.BatchChannels[workerId] {
+		sqlcmd[i] = onePoint
 		i++
-		if i > batchSize {
+		if i > write.BatchSize {
 			i = 1
-			//logger.Infof(strings.Join(sqlcmd, ""))
 			_, err := db.Exec(strings.Join(sqlcmd, ""))
 			if err != nil {
 				logger.Infof("processBatches error %s", err)
@@ -694,7 +360,6 @@ func processBatches(iworker int) {
 	}
 	if i > 1 {
 		i = 1
-		//		logger.Infof(strings.Join(sqlcmd, ""))
 		_, err := db.Exec(strings.Join(sqlcmd, ""))
 		if err != nil {
 			var count int = 2
@@ -713,7 +378,7 @@ func processBatches(iworker int) {
 		}
 	}
 
-	workersGroup.Done()
+	write.WorkersGroup.Done()
 }
 
 func TestSerialization() {
@@ -792,41 +457,4 @@ func TestSerialization() {
 
 	}
 
-}
-
-func TaosStrCmp(a string, b string) bool {
-	//return if a locates before b in a dictrionary.
-	for i := 0; i < len(a) && i < len(b); i++ {
-		if int(a[i]-'0') > int(b[i]-'0') {
-			return false
-		} else if int(a[i]-'0') < int(b[i]-'0') {
-			return true
-		}
-	}
-	if len(a) > len(b) {
-		return false
-	} else {
-		return true
-	}
-}
-
-func OrderInsertS(s string, l *list.List) {
-	e := l.Front()
-	if e == nil {
-		l.PushFront(s)
-		return
-	}
-
-	for e = l.Front(); e != nil; e = e.Next() {
-		str := e.Value.(string)
-
-		if TaosStrCmp(str, s) {
-			continue
-		} else {
-			l.InsertBefore(s, e)
-			return
-		}
-	}
-	l.PushBack(s)
-	return
 }
