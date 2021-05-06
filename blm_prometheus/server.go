@@ -167,7 +167,7 @@ func main() {
 		TestSerialization()
 	}
 	// read
-	http.Handle("/read", readHandle(reader))
+	http.Handle("/pull", readHandle(reader))
 	log.Fatal(http.ListenAndServe(":"+write.RWPort, nil))
 
 }

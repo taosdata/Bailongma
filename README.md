@@ -68,7 +68,7 @@ remote_write:
   - url: "http://10.1.2.3:8088/receive"
 
 remote_read:
-  - url: "http://10.1.2.3:8088/read"
+  - url: "http://10.1.2.3:8088/pull"
 ```
 ### 查询prometheus写入数据
 prometheus产生的数据格式如下：

@@ -75,7 +75,7 @@ remote_write:
   - url: "http://localhost:1234/receive"
     
 remote_read:
-  - url: "http://localhost:1234/read"
+  - url: "http://localhost:1234/pull"
 ```
 
 Then start Prometheus:
