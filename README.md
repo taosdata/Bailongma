@@ -3,7 +3,7 @@
 TDengine在原生连接器通过TAOS SQL写入数据之外，还支持通过API服务程序来接入Prometheus和Telegraf的数据，仅需在Prometheus和Telegraf添加相关配置，即可将数据直接写入TDengine中，并按规则自动创建库和相关表项，无需任何代码，以及提前在TDengine做任何配置。
 这篇博文[用Docker容器快速搭建一个Devops监控Demo](https://www.taosdata.com/blog/2020/02/03/1189.html)即是采用bailongma将Prometheus和Telegraf的数据写入TDengine中的示例，可以参考。
 
-### Bailongma 
+### Bailongma
 [Bailongma](https://github.com/taosdata/Bailongma)是TDengine团队开发的开源数据接入API服务，目前支持Prometheus和Telegraf通过增加配置后直接将数据写入TDengine中。
 
 ## 从源代码编译Bailongma
@@ -13,7 +13,7 @@ TDengine在原生连接器通过TAOS SQL写入数据之外，还支持通过API�
 - Linux操作系统的服务器
 - 安装好Golang，1.10版本以上
 - 对应的TDengine版本。因为用到了TDengine的客户端动态链接库，因此需要安装好和服务端相同版本的TDengine程序；比如服务端版本是TDengine 2.0.0,则在bailongma所在的linux服务器（可以与TDengine在同一台服务器，或者不同服务器）
-Bailongma项目中有两个文件夹blm_prometheus和blm_telegraf，分别存放了prometheus和Telegraf的写入API程序，编译方法都相同。以prometheus写入程序为例，编译过程如下
+  Bailongma项目中有两个文件夹blm_prometheus和blm_telegraf，分别存放了prometheus和Telegraf的写入API程序，编译方法都相同。以prometheus写入程序为例，编译过程如下
 ```
 go mod init bailongma/v2 
 
@@ -29,9 +29,9 @@ go build
 通过Prometheus的官网下载安装。[下载地址](https://prometheus.io/download/)
 
 ### 配置Prometheus
-参考Prometheus的[配置文档](https://prometheus.io/docs/prometheus/latest/configuration/configuration/),在Prometheus的配置文件中的<remote_write>部分，增加以下配置
+参考Prometheus的[配置文档](https://prometheus.io/docs/prometheus/latest/configuration/configuration/),在Prometheus的配置文件中的<remote_write>和<remote_read>部分，增加以下配置
 - url: bailongma API服务提供的URL, 参考下面的blm_prometheus启动示例章节
-启动Prometheus后，可以通过taos客户端查询确认数据是否成功写入。
+  启动Prometheus后，可以通过taos客户端查询确认数据是否成功写入。
 
 ### 启动blm_prometheus程序
 blm_prometheus程序有以下选项，在启动blm_prometheus程序时可以通过设定这些选项来设定blm_prometheus的配置。
@@ -62,10 +62,13 @@ blm_prometheus对prometheus提供服务的端口号。
 ```
 ./blm_prometheus -port 8088
 ```
-则在prometheus的配置文件中,假设blm_prometheus所在服务器的IP地址为"10.1.2.3"，<remote_write>部分增加url为
+则在prometheus的配置文件中,假设blm_prometheus所在服务器的IP地址为"10.1.2.3"，<remote_write> 和 <remote_read> 部分增加url为
 ```yaml
 remote_write:
   - url: "http://10.1.2.3:8088/receive"
+
+remote_read:
+  - url: "http://10.1.2.3:8088/pull"
 ```
 ### 查询prometheus写入数据
 prometheus产生的数据格式如下：
@@ -101,9 +104,9 @@ TDengine能够与开源数据采集系统[Telegraf](https://www.influxdata.com/t
 
 ### 配置Telegraf
 
-修改Telegraf配置文件/etc/telegraf/telegraf.conf中与TDengine有关的配置项。 
+修改Telegraf配置文件/etc/telegraf/telegraf.conf中与TDengine有关的配置项。
 
-在output plugins部分，增加[[outputs.http]]配置项： 
+在output plugins部分，增加[[outputs.http]]配置项：
 
 - url： bailongma API服务提供的URL, 参考下面的启动示例章节
 - data_format: "json"
@@ -142,7 +145,7 @@ blm_telegraf对telegraf提供服务的端口号。
 ```
 ./blm_telegraf -host 127.0.0.1 -port 8089
 ```
-则在telegraf的配置文件中,假设blm_telegraf所在服务器的IP地址为"10.1.2.3"，在output plugins部分，增加[[outputs.http]]配置项： 
+则在telegraf的配置文件中,假设blm_telegraf所在服务器的IP地址为"10.1.2.3"，在output plugins部分，增加[[outputs.http]]配置项：
 ```yaml
 url = "http://10.1.2.3:8089/telegraf"
 ```

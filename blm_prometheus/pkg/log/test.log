@@ -1,0 +1,5 @@
+[DEBUG] 2021/05/02 17:41:44 logger_test.go:9: debug
+[DEBUG] 2021/05/02 18:03:36 logger_test.go:9: debug
+[INFO] 2021/05/02 18:03:36 logger_test.go:10: info
+[ERROR] 2021/05/02 18:03:36 logger_test.go:11: error
+[WARNING] 2021/05/02 18:03:36 logger_test.go:12: warning

@@ -1,6 +1,6 @@
-# Prometheus Remote Write Adapter for TDengine 
+# Prometheus Remote Write Adapter for TDengine
 
-This is an adapter to support Prometheus remote write into TDengine.
+This is an adapter to support Prometheus remote write into TDengine and and read from TDengine.
 
 ## Prerequisite
 
@@ -11,7 +11,7 @@ To use it:
 ```
 go build
 ```
-During the go build process, there maybe some errors arised because of lacking some needed packages. You can use `go get` the package to solve it
+During the go build process, there maybe some errors occurred because of lacking some needed packages. You can use `go get` the package to solve it
 ```
 go get github.com/gogo/protobuf/proto
 go get github.com/golang/snappy
@@ -20,7 +20,7 @@ go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
 go get github.com/prometheus/prometheus/prompb
 
 ```
-After successful build, there will be a blm_prometheus in the same directory. 
+After successful build, there will be a blm_prometheus in the same directory.
 
 ## Running in background
 
@@ -60,7 +60,7 @@ set the user name that have the right to access the TDengine. default is "root"
 set the password of dbuser. default is "taosdata"
 
 --port
-set the port that prometheus configuration remote_write. as showed above, in the prometheus.yaml. default is 10203
+set the port that prometheus configuration remote_write and remote_read. as showed above, in the prometheus.yaml. default is 10203
 
 
 
@@ -73,6 +73,9 @@ Add the following to your prometheus's configuration `prometheus.yml` :
 ```yaml
 remote_write:
   - url: "http://localhost:1234/receive"
+    
+remote_read:
+  - url: "http://localhost:1234/pull"
 ```
 
 Then start Prometheus:
@@ -131,7 +134,7 @@ When the service is running, GET the url`http://ip:port/health` will return 200 
 
 ## Limitations
 
-The TDengine limits the length of super table name, so if the name of prometheus metric exceeds 60 byte, it will be truncated to first 60 bytes. And the length of label name is limited within 50 byte.  
+The TDengine limits the length of super table name, so if the name of prometheus metric exceeds 60 byte, it will be truncated to first 60 bytes. And the length of label name is limited within 50 byte.
 
 
 [TDengine]:https://www.github.com/Taosdata/TDengine
