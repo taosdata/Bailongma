@@ -16,8 +16,8 @@
 package read
 
 import (
-	"blm_prometheus/pkg/log"
-	"blm_prometheus/pkg/tdengine/write"
+	"bailongma/v2/blm_prometheus/pkg/log"
+	"bailongma/v2/blm_prometheus/pkg/tdengine/write"
 	"database/sql"
 	"fmt"
 	"github.com/prometheus/common/model"
