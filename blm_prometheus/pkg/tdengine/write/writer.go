@@ -16,7 +16,7 @@
 package write
 
 import (
-	"blm_prometheus/pkg/log"
+	"bailongma/v2/blm_prometheus/pkg/log"
 	"container/list"
 	"crypto/md5"
 	"database/sql"

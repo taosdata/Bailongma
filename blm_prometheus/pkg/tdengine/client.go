@@ -16,8 +16,8 @@
 package tdengine
 
 import (
-	"blm_prometheus/pkg/tdengine/read"
-	"blm_prometheus/pkg/tdengine/write"
+	"bailongma/v2/blm_prometheus/pkg/tdengine/read"
+	"bailongma/v2/blm_prometheus/pkg/tdengine/write"
 	"github.com/prometheus/prometheus/prompb"
 	"net/http"
 )

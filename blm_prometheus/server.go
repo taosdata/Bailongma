@@ -16,8 +16,8 @@
 package main
 
 import (
-	"blm_prometheus/pkg/tdengine"
-	"blm_prometheus/pkg/tdengine/write"
+	"bailongma/v2/blm_prometheus/pkg/tdengine"
+	"bailongma/v2/blm_prometheus/pkg/tdengine/write"
 	"bufio"
 	"database/sql"
 	"flag"
@@ -35,7 +35,7 @@ import (
 	"sync"
 	"time"
 
-	logger "blm_prometheus/pkg/log"
+	logger "bailongma/v2/blm_prometheus/pkg/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
