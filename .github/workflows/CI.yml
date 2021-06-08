@@ -1,0 +1,55 @@
+name: Rust
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    container:
+      image: zitsen/tdengine-server:2.1.1.0
+      options: --user root
+      volumes:
+        - /etc/apt/sources.list:/etc/apt/sources.list
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.15
+
+      - name: Install build-essential
+        run: apt-get update && apt-get install -y build-essential
+
+      - name: Go mod
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          go mod init bailongma/v2
+          go mod tidy
+      - name: Build blm_prometheus
+        run: |
+          cd blm_prometheus
+          go build
+
+      - name: Build blm_telegraf
+        run: |
+          cd blm_telegraf
+          go build
+
+      - name: Start blm_prometheus
+        run: |
+          nohup taosd > taosd.log 2>&1 &
+          sleep 1
+          nohup ./blm_prometheus/blm_prometheus &
+
+      - name: Download blm-bench-prom
+        run: |
+          wget -c -O blm-bench-prom https://github.com/taosdata/bailongma-rs/releases/download/v0.2.3/blm-bench-prom-amd64
+          chmod +x blm-bench-prom
+          ./blm-bench-prom --help
+      - name: Test
+        run: |
+          sleep 1
+          ./blm-bench-prom http://localhost:10203/receive --metrics 10 --points 10 --samples 10 --labels 8 --interval 50 --level trace --ci --wait 4000
