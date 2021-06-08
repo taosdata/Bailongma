@@ -625,7 +625,7 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 	tagmap := nt.tagmap
 	taglist := nt.taglist
 
-	var sqlcmd, sqlcmd1 string
+	var sqlcmd string
 	for i := 0; i < len(ts); i++ {
 		for k, _ := range ts[i].Tags {
 			k = TaosFieldNameEscape(k)
@@ -633,7 +633,7 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 			if !ok {
 				tbname := TaosTableNameEscape(ts[0].Name)
 				sqlcmd = sqlcmd + "alter table " + tbname + " add tag " + k + tagstr + "\n"
-				sqlcmd1 = sqlcmd1 + "alter table " + tbname + "_str add tag " + k + tagstr + "\n"
+				sqlcmd = sqlcmd + "alter table " + tbname + "_str add tag " + k + tagstr + "\n"
 				taglist.PushBack(k)
 				tagmap[k] = "y"
 
@@ -641,8 +641,10 @@ func ProcessData(ts []metric, dbn string, hostip string) error {
 		}
 
 	}
-	execSql(dbn, sqlcmd, db)
-	execSql(dbn, sqlcmd1, db)
+	sqls := strings.Split(sqlcmd, "\n")
+	for _, s := range sqls {
+		execSql(dbn, s, db)
+	}
 
 	for i := 0; i < len(ts); i++ {
 		SerilizeTDengine(ts[i], dbn, hostip, taglist, db)
