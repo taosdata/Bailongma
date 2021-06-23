@@ -16,7 +16,7 @@ During the go build process, there maybe some errors arised because of lacking s
 go get github.com/taosdata/driver-go/taosSql
 
 ```
-After successful build, there will be a blm_telegraf in the same directory. 
+After successful build, there will be a blm_telegraf in the same directory.
 
 ## Running in background
 
@@ -30,17 +30,17 @@ The API url is `http://ipaddress:port/telegraf`
 There are several options can be set:
 
 ```
---host 
+--host
 set the host of TDengine, IP:port, for example "192.168.0.1:0"
 
---batch-size 
+--batch-size
 set the size of how many records in one SQL cmd line writing into TDengine. There is a limitation that TDengine could only accept SQL line small than 64000 bytes, so usually the batch size should not exceed 800. Default is 10.
 
 --http-workers
 set the number of workers who process the HTTP request. default is 10
 
 --sql-workers
-set the number of workers who process the database request. default is 10 
+set the number of workers who process the database request. default is 10
 
 --dbname
 set the database name in TDengine, if not exists, a database will be created after this dbname. default is "telegraf".
@@ -52,7 +52,7 @@ set the user name that have the right to access the TDengine. default is "root"
 set the password of dbuser. default is "taosdata"
 
 --port
-set the port that prometheus configuration remote_write. as showed above, in the prometheus.yaml
+set the port that telegraf configuration outputs.http. as showed below, in the telegraf.conf
 
 ```
 
@@ -62,7 +62,7 @@ To write into blm_telegraf API, you should configure the telegraf as below
 In the telegraf configuration file, output plugin part:
 
 1. telegraf out put plugin setup:
-Set the url to the blm_telegraf API 
+Set the url to the blm_telegraf API
 Set the data format as "json"
 Set the json timstamp units as "1ms"
 ```toml
@@ -147,7 +147,7 @@ When the service is running, GET the url`http://ip:port/health` will return 200 
 
 ## Limitations
 
-The TDengine limits the length of super table name, so if the name of Telegraf measurement name  exceeds 60 byte, it will be truncated to first 60 bytes. And the length of tags name is limited within 50 byte.  
+The TDengine limits the length of super table name, so if the name of Telegraf measurement name  exceeds 60 byte, it will be truncated to first 60 bytes. And the length of tags name is limited within 50 byte.
 
 
 [TDengine]:https://www.github.com/Taosdata/TDengine

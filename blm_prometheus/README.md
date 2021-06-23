@@ -32,23 +32,23 @@ nohup ./blm_prometheus --tdengine-ip 112.102.3.69 --batch-size 80 --http-workers
 There are several options can be set:
 
 ```sh
---tdengine-ip 
+--tdengine-ip
 set the IP of TDengine for example "192.168.0.1"
 
 --tdengine-name
-set the domain name of TDengine, then blm-prometheus can lookup the ip address of TDengine. 
+set the domain name of TDengine, then blm-prometheus can lookup the ip address of TDengine.
 
 --tdengine-api-port
 set the restful API port of TDengine. blm-prometheus will query the table schema info from TDengine to keep meta info synchronized. Default is 6041 in v2.0+ (was 6020 in v1.6).
 
---batch-size 
+--batch-size
 set the size of how many records in one SQL cmd line writing into TDengine. There is a limitation that TDengine could only accept SQL line small than 64000 bytes, so usually the batch size should not exceed 200. Default is 100.
 
 --http-workers
 set the number of workers who process the HTTP request. default is 10
 
 --sql-workers
-set the number of workers who process the database request. default is 10 
+set the number of workers who process the database request. default is 10
 
 --dbname
 set the database name in TDengine, if not exists, a database will be created after this dbname. default is "prometheus".
@@ -60,7 +60,7 @@ set the user name that have the right to access the TDengine. default is "root"
 set the password of dbuser. default is "taosdata"
 
 --port
-set the port that prometheus configuration remote_write and remote_read. as showed above, in the prometheus.yaml. default is 10203
+set the port that prometheus configuration remote_write and remote_read. as showed below, in the prometheus.yaml. default is 10203
 
 
 
@@ -73,7 +73,7 @@ Add the following to your prometheus's configuration `prometheus.yml` :
 ```yaml
 remote_write:
   - url: "http://localhost:1234/receive"
-    
+
 remote_read:
   - url: "http://localhost:1234/pull"
 ```
