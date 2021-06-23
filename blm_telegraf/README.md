@@ -13,7 +13,7 @@ go build
 ```
 During the go build process, there maybe some errors arised because of lacking some needed packages. You can use `go get` the package to solve it
 ```
-go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
+go get github.com/taosdata/driver-go/taosSql
 
 ```
 After successful build, there will be a blm_telegraf in the same directory. 

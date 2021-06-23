@@ -16,7 +16,7 @@ During the go build process, there maybe some errors occurred because of lacking
 go get github.com/gogo/protobuf/proto
 go get github.com/golang/snappy
 go get github.com/prometheus/common/model
-go get github.com/taosdata/TDengine/src/connector/go/src/taosSql
+go get github.com/taosdata/driver-go/taosSql
 go get github.com/prometheus/prometheus/prompb
 
 ```
