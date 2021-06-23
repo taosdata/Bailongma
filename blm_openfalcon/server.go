@@ -290,7 +290,7 @@ func init() {
 	flag.StringVar(&dbname, "dbname", "openfalcon", "Database name where to store metrics")
 	flag.StringVar(&dbuser, "dbuser", "root", "User for host to send result metrics")
 	flag.StringVar(&dbpassword, "dbpassword", "taosdata", "User password for Host to send result metrics")
-	flag.StringVar(&rwport, "port", "10202", "remote write port")
+	flag.StringVar(&rwport, "port", "10204", "remote write port")
 	flag.IntVar(&debugprt, "debugprt", 0, "if 0 not print, if 1 print the sql")
 	flag.IntVar(&taglen, "tag-length", 30, "the max length of tag string")
 	flag.IntVar(&buffersize, "buffersize", 100, "the buffer size of metrics received")
@@ -361,6 +361,7 @@ func main() {
 		nodeChans[idx%httpworkers] <- req
 
 	})
+
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
