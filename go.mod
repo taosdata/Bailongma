@@ -1,15 +1,9 @@
 module bailongma/v2
 
-replace (
-	github.com/Sirupsen/logrus v1.8.1 => github.com/sirupsen/logrus v1.8.1
-	github.com/sirupsen/logrus v1.8.1 => github.com/Sirupsen/logrus v1.8.1
-)
-
 go 1.16
 
 require (
 	github.com/BurntSushi/toml v0.3.1
-	github.com/Sirupsen/logrus v1.8.1 // indirect
 	github.com/emirpasic/gods v1.12.0
 	github.com/gin-contrib/cors v1.3.1
 	github.com/gin-contrib/gzip v0.0.3
@@ -20,7 +14,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/jinzhu/gorm v1.9.16 // indirect
 	github.com/json-iterator/go v1.1.11
-	github.com/open-falcon/falcon-plus v0.2.2
+	github.com/open-falcon/falcon-plus v0.2.2-0.20210717135504-29238ca68d42
 	github.com/panjf2000/ants/v2 v2.4.6
 	github.com/prometheus/common v0.29.0
 	github.com/prometheus/prometheus v2.5.0+incompatible
