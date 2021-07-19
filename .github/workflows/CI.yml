@@ -26,7 +26,6 @@ jobs:
       - name: Go mod
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
-#          go mod init bailongma/v2
           go mod tidy
       - name: Build blm_prometheus
         run: |
@@ -36,6 +35,11 @@ jobs:
       - name: Build blm_telegraf
         run: |
           cd blm_telegraf
+          go build
+
+      - name: Build blm_openfalcon
+        run: |
+          cd blm_openfalcon
           go build
 
       - name: Start blm_prometheus
