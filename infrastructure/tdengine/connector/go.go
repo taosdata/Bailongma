@@ -51,28 +51,23 @@ var (
 	nullUInt16  = reflect.TypeOf(taosSql.NullUInt16{})
 	nullUInt32  = reflect.TypeOf(taosSql.NullUInt32{})
 	nullUInt64  = reflect.TypeOf(taosSql.NullUInt64{})
-	nullFloat32 = reflect.TypeOf(NullFloat32{})
-	nullFloat64 = reflect.TypeOf(NullFloat64{})
+	nullFloat32 = reflect.TypeOf(taosSql.NullFloat32{})
+	nullFloat64 = reflect.TypeOf(taosSql.NullFloat64{})
 	nullTime    = reflect.TypeOf(taosSql.NullTime{})
-	nullBool    = reflect.TypeOf(NullBool{})
-	nullString  = reflect.TypeOf(NullString{})
+	nullBool    = reflect.TypeOf(taosSql.NullBool{})
+	nullString  = reflect.TypeOf(taosSql.NullString{})
 )
 
 func (g *GoConnector) Query(ctx context.Context, q string) (*Data, error) {
 	var err error
-	gq1 := time.Now()
 	rows, err := g.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, g.changeError(err)
 	}
-	fmt.Println("gq1", time.Now().Sub(gq1).Microseconds())
-	gq2 := time.Now()
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, g.changeError(err)
 	}
-	fmt.Println("gq2", time.Now().Sub(gq2).Microseconds())
-	gq3 := time.Now()
 	result := &Data{}
 	result.Head = columns
 	tt, err := rows.ColumnTypes()
@@ -124,8 +119,6 @@ func (g *GoConnector) Query(ctx context.Context, q string) (*Data, error) {
 		}
 		dbResult = append(dbResult, scanValues)
 	}
-	fmt.Println("gq3", time.Now().Sub(gq3).Microseconds())
-	gq4 := time.Now()
 	//处理速度耗时，分片处理
 	result.Data = make([][]interface{}, len(dbResult))
 	batch := 10000
@@ -174,7 +167,6 @@ func (g *GoConnector) Query(ctx context.Context, q string) (*Data, error) {
 		}
 	}
 	wg.Wait()
-	fmt.Println("gq4", time.Now().Sub(gq4).Microseconds())
 	return result, nil
 }
 
@@ -211,144 +203,4 @@ func (g *GoConnector) changeError(err error) error {
 		}
 	}
 	return err
-}
-
-type NullFloat64 struct {
-	Inner float64
-	Valid bool // Valid is true if Inner is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (n *NullFloat64) Scan(value interface{}) error {
-	if value == nil {
-		n.Inner, n.Valid = 0, false
-		return nil
-	}
-	n.Valid = true
-	v, ok := value.(float64)
-	if !ok {
-		return &taosSql.TaosError{Code: 0xffff, ErrStr: "taosSql parse float64 error"}
-	}
-	n.Inner = v
-	return nil
-}
-
-// Value implements the driver Valuer interface.
-func (n NullFloat64) Value() (driver.Value, error) {
-	if !n.Valid {
-		return nil, nil
-	}
-	return n.Inner, nil
-}
-
-type NullFloat32 struct {
-	Inner float32
-	Valid bool // Valid is true if Inner is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (n *NullFloat32) Scan(value interface{}) error {
-	if value == nil {
-		n.Inner, n.Valid = 0, false
-		return nil
-	}
-	n.Valid = true
-	v, ok := value.(float32)
-	if !ok {
-		return &taosSql.TaosError{Code: 0xffff, ErrStr: "taosSql parse float64 error"}
-	}
-	n.Inner = v
-	return nil
-}
-
-// Value implements the driver Valuer interface.
-func (n NullFloat32) Value() (driver.Value, error) {
-	if !n.Valid {
-		return nil, nil
-	}
-	return n.Inner, nil
-}
-
-type NullString struct {
-	Inner string
-	Valid bool // Valid is true if Inner is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (n *NullString) Scan(value interface{}) error {
-	if value == nil {
-		n.Inner, n.Valid = "", false
-		return nil
-	}
-	n.Valid = true
-	v, ok := value.(string)
-	if !ok {
-		return &taosSql.TaosError{Code: 0xffff, ErrStr: "taosSql parse string error"}
-	}
-	n.Inner = v
-	return nil
-}
-
-// Value implements the driver Valuer interface.
-func (n NullString) Value() (driver.Value, error) {
-	if !n.Valid {
-		return nil, nil
-	}
-	return n.Inner, nil
-}
-
-type NullBytes struct {
-	Inner sql.RawBytes
-	Valid bool // Valid is true if Inner is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (n *NullBytes) Scan(value interface{}) error {
-	if value == nil {
-		n.Inner, n.Valid = nil, false
-		return nil
-	}
-	n.Valid = true
-	v, ok := value.(sql.RawBytes)
-	if !ok {
-		return &taosSql.TaosError{Code: 0xffff, ErrStr: "taosSql parse bytes error"}
-	}
-	n.Inner = v
-	return nil
-}
-
-// Value implements the driver Valuer interface.
-func (n NullBytes) Value() (driver.Value, error) {
-	if !n.Valid {
-		return nil, nil
-	}
-	return n.Inner, nil
-}
-
-type NullBool struct {
-	Inner bool
-	Valid bool // Valid is true if Inner is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (n *NullBool) Scan(value interface{}) error {
-	if value == nil {
-		n.Inner, n.Valid = false, false
-		return nil
-	}
-	n.Valid = true
-	v, ok := value.(bool)
-	if !ok {
-		return &taosSql.TaosError{Code: 0xffff, ErrStr: "taosSql parse bytes error"}
-	}
-	n.Inner = v
-	return nil
-}
-
-// Value implements the driver Valuer interface.
-func (n NullBool) Value() (driver.Value, error) {
-	if !n.Valid {
-		return nil, nil
-	}
-	return n.Inner, nil
 }

@@ -21,7 +21,7 @@ require (
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/viper v1.8.1 // indirect
-	github.com/taosdata/driver-go v0.0.0-20210706085040-976d33c51c3d
+	github.com/taosdata/driver-go v0.0.0-20210719124744-62b8317cb379
 	github.com/toolkits/cache v0.0.0-20190218093630-cfb07b7585e5 // indirect
 	github.com/toolkits/conn_pool v0.0.0-20170512061817-2b758bec1177 // indirect
 	github.com/toolkits/consistent v0.0.0-20150827090850-a6f56a64d1b1 // indirect

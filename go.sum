@@ -354,8 +354,8 @@ github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5Cc
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/subosito/gotenv v1.2.0 h1:Slr1R9HxAlEKefgq5jn9U+DnETlIUa6HfgEzj0g5d7s=
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
-github.com/taosdata/driver-go v0.0.0-20210706085040-976d33c51c3d h1:PW+sjwgaB4VcGAlDNO9cDL09cMv+s1Nljme/VQEXtuE=
-github.com/taosdata/driver-go v0.0.0-20210706085040-976d33c51c3d/go.mod h1:zcrRatLSD5tBg8arF2RFHvfawKa30gxDGikC/7zNPrI=
+github.com/taosdata/driver-go v0.0.0-20210719124744-62b8317cb379 h1:hM4stjNA62b7qeZhf5JCJdNbei0ZBIq/O7jXDpnfeUY=
+github.com/taosdata/driver-go v0.0.0-20210719124744-62b8317cb379/go.mod h1:k0UvvUy5mlSz4M+InxT3MZYO/eaTWXs7hO9ndLTeevU=
 github.com/toolkits/cache v0.0.0-20190218093630-cfb07b7585e5 h1:aWeunbUwH8/P2E918Ge885/4wQBgjvkgUkmUGoyrUWQ=
 github.com/toolkits/cache v0.0.0-20190218093630-cfb07b7585e5/go.mod h1:NQTo1ikAmZPMbWwBZuRRT6ZR/7fIQJ3MVwe2Hyd/Gg8=
 github.com/toolkits/conn_pool v0.0.0-20170512061817-2b758bec1177 h1:maG51qtOSBRRgQorIBMLgklBZar3mEArIfRuUykjOXo=
