@@ -18,12 +18,16 @@ package read
 import (
 	"bailongma/v2/blm_prometheus/pkg/log"
 	"bailongma/v2/blm_prometheus/pkg/tdengine/write"
+	"bytes"
 	"database/sql"
 	"fmt"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/prompb"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 type ReaderProcessor struct {
@@ -42,96 +46,151 @@ func (p *ReaderProcessor) Process(req *prompb.ReadRequest) (*prompb.ReadResponse
 	defer db.Close()
 	labelsToSeries := map[string]*prompb.TimeSeries{}
 	for _, q := range req.Queries {
-		tableName, command, err := buildCommand(q)
-
-		if err != nil {
-			return nil, err
-		}
-		log.InfoLogger.Printf("Executed query：%s\n", command)
-
-		rows, err := db.Query(command)
+		metricFilter, condition, labelFilters, err := buildCommand(q)
 		if err != nil {
 			return nil, err
 		}
 
-		columns, err := rows.Columns()
+		metrics, err := fetchMetricTables(db, metricFilter)
 		if err != nil {
 			return nil, err
 		}
 
-		columnLength := len(columns)
-		// temp for cache
-		cache := make([]interface{}, columnLength)
-		// init for row
-		for index, _ := range cache {
-			var a interface{}
-			cache[index] = &a
-		}
+		// metricLabelAdd := len(metrics) > 1
 
-		for rows.Next() {
-			var (
-				value    float64
-				dataTime time.Time
-			)
+		for _, tableName := range metrics {
+			command := fmt.Sprintf("SELECT * FROM %s %s", tableName, condition)
+			//tableName, command, err := buildCommand(q)
 
-			error := rows.Scan(cache...)
-			if error != nil {
-				return nil, error
+			log.InfoLogger.Printf("Executed query：%s\n", command)
+
+			rows, err := db.Query(command)
+			if err != nil {
+				return nil, err
 			}
 
-			row := make(map[string]string)
-			//set data
-			for i, data := range cache {
-				if columns[i] == "ts" {
-					timeStr := (*data.(*interface{})).(string)
-					dataTime, err = time.Parse("2006-01-02 15:04:05.000", timeStr)
-					if err != nil {
-						continue
-					}
-				} else if columns[i] == "value" {
-					value = (*data.(*interface{})).(float64)
-				} else if columns[i] != "taghash" {
-					row[columns[i]] = (*data.(*interface{})).(string)
+			columns, err := rows.Columns()
+			if err != nil {
+				return nil, err
+			}
+
+			columnLength := len(columns)
+			// temp for cache
+			cache := make([]interface{}, columnLength)
+			// init for row
+			for index := range cache {
+				var a interface{}
+				cache[index] = &a
+			}
+
+			for rows.Next() {
+				var (
+					value    float64
+					dataTime time.Time
+				)
+
+				error := rows.Scan(cache...)
+				if error != nil {
+					return nil, error
 				}
-			}
 
-			ts, ok := labelsToSeries[tableName]
-			if !ok {
-				labelPairs := make([]*prompb.Label, 0, columnLength-2)
-				labelPairs = append(labelPairs, &prompb.Label{
-					Name:  model.MetricNameLabel,
-					Value: tableName,
-				})
+				row := make(map[string]string)
+				//set data
+				rowOk := true
 
-				for _, k := range columns {
-					if k == "ts" || k == "value" || k == "taghash" {
-						continue
+				for i, data := range cache {
+					if columns[i] == "ts" {
+						dataTime = (*data.(*interface{})).(time.Time)
+						// timeStr := (*data.(*interface{})).(string)
+						// dataTime, err = time.Parse("2006-01-02 15:04:05.000", timeStr)
+						// if err != nil {
+						// 	continue
+						// }
+					} else if columns[i] == "value" {
+						value = (*data.(*interface{})).(float64)
+					} else if columns[i] != "taghash" {
+						labelName := strings.Replace(columns[i], "t_", "", 1)
+						labelFilter, ok := labelFilters[labelName]
+						value := (*data.(*interface{})).(string)
+						if ok {
+							for _, filter := range labelFilter {
+								isMatch := filter.Pattern.MatchString(value)
+								if filter.Type == prompb.LabelMatcher_RE && !isMatch {
+									rowOk = false
+									break
+								}
+								if filter.Type == prompb.LabelMatcher_NRE && isMatch {
+									rowOk = false
+									break
+								}
+							}
+						}
+						if !rowOk {
+							break
+						}
+
+						row[columns[i]] = value
 					}
+				}
+				if !rowOk {
+					continue
+
+				}
+				keys := make([]string, len(row))
+				i := 0
+				for k, _ := range row {
+					keys[i] = k
+					i++
+				}
+				sort.Strings(keys)
+				buffer := bytes.NewBufferString("")
+				buffer.WriteString(tableName)
+				buffer.WriteString("|")
+				for _, k := range keys {
+					buffer.WriteString(k)
+					buffer.WriteString(":")
+					buffer.WriteString(row[k])
+					buffer.WriteString("|")
+				}
+				labelsKey := buffer.String()
+				ts, ok := labelsToSeries[labelsKey]
+				if !ok {
+					labelPairs := make([]*prompb.Label, 0, columnLength-2)
 					labelPairs = append(labelPairs, &prompb.Label{
-						Name:  strings.Replace(k, "t_", "", 1),
-						Value: row[k],
+						Name:  model.MetricNameLabel,
+						Value: tableName,
 					})
+
+					for _, k := range columns {
+						if k == "ts" || k == "value" || k == "taghash" {
+							continue
+						}
+						labelPairs = append(labelPairs, &prompb.Label{
+							Name:  strings.Replace(k, "t_", "", 1),
+							Value: row[k],
+						})
+					}
+
+					ts = &prompb.TimeSeries{
+						Labels:  labelPairs,
+						Samples: make([]prompb.Sample, 0, 100),
+					}
+					labelsToSeries[labelsKey] = ts
 				}
 
-				ts = &prompb.TimeSeries{
-					Labels:  labelPairs,
-					Samples: make([]prompb.Sample, 0, 100),
-				}
-				labelsToSeries[tableName] = ts
+				ts.Samples = append(ts.Samples, prompb.Sample{
+					Timestamp: dataTime.UnixNano() / 1000000,
+					Value:     value,
+				})
 			}
 
-			ts.Samples = append(ts.Samples, prompb.Sample{
-				Timestamp: dataTime.UnixNano() / 1000000,
-				Value:     value,
-			})
-		}
+			err = rows.Err()
+			if err != nil {
+				return nil, err
+			}
 
-		err = rows.Err()
-		if err != nil {
-			return nil, err
+			rows.Close()
 		}
-
-		rows.Close()
 	}
 
 	resp := prompb.ReadResponse{
@@ -142,38 +201,89 @@ func (p *ReaderProcessor) Process(req *prompb.ReadRequest) (*prompb.ReadResponse
 		},
 	}
 	for _, ts := range labelsToSeries {
-		log.InfoLogger.Printf("ts size: %d\n", ts.Size())
+		// log.InfoLogger.Printf("ts size: %d\n", ts.Size())
 		resp.Results[0].Timeseries = append(resp.Results[0].Timeseries, ts)
 	}
 	log.InfoLogger.Printf("Returned response #timeseries: %d\n", len(labelsToSeries))
 	return &resp, nil
 }
 
-func buildCommand(q *prompb.Query) (string, string, error) {
+func fetchMetricTables(db *sql.DB, filter *MetricFilter) (metrics []string, err error) {
+	if filter.Type == prompb.LabelMatcher_EQ {
+		metrics = append(metrics, filter.Pattern)
+		return metrics, err
+	}
+	rows, err := db.Query("show stables")
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var name string
+		var ts time.Time
+		var columns int
+		var tags int
+		var tables int
+		err = rows.Scan(&name, &ts, &columns, &tags, &tables)
+		if err != nil {
+			return nil, err
+		}
+		switch filter.Type {
+		case prompb.LabelMatcher_NEQ:
+			if name != filter.Pattern {
+				metrics = append(metrics, name)
+			}
+		case prompb.LabelMatcher_RE:
+			pattern, err := regexp.Compile(filter.Pattern)
+			if err != nil {
+				return nil, err
+			}
+			if pattern.MatchString(name) {
+				metrics = append(metrics, name)
+			}
+		case prompb.LabelMatcher_NRE:
+			pattern, err := regexp.Compile(filter.Pattern)
+			if err != nil {
+				return nil, err
+			}
+			if !pattern.MatchString(name) {
+				metrics = append(metrics, name)
+			}
+		default:
+			return nil, fmt.Errorf("unreachable filter: %v", filter)
+		}
+	}
+	return metrics, err
+}
+
+func buildCommand(q *prompb.Query) (*MetricFilter, string, map[string][]*LabelFilter, error) {
 	return buildQuery(q)
 }
 
-func buildQuery(q *prompb.Query) (string, string, error) {
+type LabelFilter struct {
+	Type    prompb.LabelMatcher_Type
+	Pattern *regexp.Regexp
+}
+
+type MetricFilter struct {
+	Type    prompb.LabelMatcher_Type
+	Pattern string
+}
+
+func buildQuery(q *prompb.Query) (*MetricFilter, string, map[string][]*LabelFilter, error) {
 	matchers := make([]string, 0, len(q.Matchers))
-	var tableName = ""
+	var metricFilter MetricFilter
+	filters := make(map[string][]*LabelFilter)
+	hasName := false
 	for _, m := range q.Matchers {
 		escapedName := escapeValue(m.Name)
 		escapedValue := escapeValue(m.Value)
 		if m.Name == model.MetricNameLabel {
-			switch m.Type {
-			case prompb.LabelMatcher_EQ:
-				if len(escapedValue) == 0 {
-					return "", "", fmt.Errorf("unknown metric name match type %v", m.Type)
-				} else {
-					tableName = escapedValue
-				}
-			case prompb.LabelMatcher_NEQ:
-			case prompb.LabelMatcher_RE:
-			case prompb.LabelMatcher_NRE:
-				return "", "", fmt.Errorf("no support metric name type %v", m.Type)
-			default:
-				return "", "", fmt.Errorf("unknown metric name match type %v", m.Type)
+			if len(escapedValue) == 0 {
+				return nil, "", nil, fmt.Errorf("unknown metric name match type %v", m.Type)
 			}
+			metricFilter.Type = m.Type
+			metricFilter.Pattern = escapedValue
+			hasName = true
 		} else {
 			switch m.Type {
 			case prompb.LabelMatcher_EQ:
@@ -187,51 +297,38 @@ func buildQuery(q *prompb.Query) (string, string, error) {
 				}
 			case prompb.LabelMatcher_NEQ:
 				matchers = append(matchers, fmt.Sprintf("t_%s <> '%s'", escapedName, escapedValue))
-			case prompb.LabelMatcher_RE:
-				matchers = append(matchers, fmt.Sprintf("t_%s like '%s'", escapedName, anchorValue(escapedValue)))
-			case prompb.LabelMatcher_NRE:
-				return "", "", fmt.Errorf("no support match type %v", m.Type)
 			default:
-				return "", "", fmt.Errorf("unknown match type %v", m.Type)
+				pattern, err := regexp.Compile(m.Value)
+				log.InfoLogger.Println("pattern: ", m.Value)
+				if err != nil {
+					return nil, "", nil, fmt.Errorf("regex pattern is invalid: %v", escapedValue)
+				}
+				var filter = &LabelFilter{
+					Type:    m.Type,
+					Pattern: pattern,
+				}
+				if labelFilter, exists := filters[escapedName]; exists {
+					filters[escapedName] = append(labelFilter, filter)
+				} else {
+					filters[escapedName] = make([]*LabelFilter, 1)
+					filters[escapedName][0] = filter
+				}
 			}
 		}
 	}
 
-	if len(tableName) == 0 {
-		return "", "", fmt.Errorf("unknown tableName")
+	if !hasName {
+		return nil, "", nil, fmt.Errorf("tableName not setted")
 	}
 
 	log.InfoLogger.Printf("startTime：%d ,endTime:%d\n", q.StartTimestampMs, q.EndTimestampMs)
 	matchers = append(matchers, fmt.Sprintf("ts >= %d", q.StartTimestampMs))
 	matchers = append(matchers, fmt.Sprintf("ts <= %d", q.EndTimestampMs))
 
-	return tableName, fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY ts",
-		tableName, strings.Join(matchers, " AND ")), nil
+	return &metricFilter, fmt.Sprintf("WHERE %s ORDER BY ts",
+		strings.Join(matchers, " AND ")), filters, nil
 }
 
 func escapeValue(str string) string {
 	return strings.Replace(str, `'`, `''`, -1)
-}
-
-// anchorValue adds anchors to values in regexps since PromQL docs
-// states that "Regex-matches are fully anchored."
-func anchorValue(str string) string {
-	l := len(str)
-
-	if l == 0 || (str[0] == '^' && str[l-1] == '$') {
-		str = strings.Replace(str, "$", "", 1)
-		return strings.Replace(str, "^", "", 1)
-	}
-
-	if str[0] == '^' {
-		str = strings.Replace(str, "^", "", 1)
-		return fmt.Sprintf("%s%", str)
-	}
-
-	if str[l-1] == '$' {
-		str = strings.Replace(str, "$", "", 1)
-		return fmt.Sprintf("%s", "%"+str)
-	}
-
-	return fmt.Sprintf("%s%", "%"+str)
 }
