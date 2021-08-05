@@ -1,11 +1,11 @@
 package metricgroup
 
 import (
-	"bailongma/v2/blm_openfalcon/config"
-	"bailongma/v2/blm_openfalcon/log"
-	"bailongma/v2/infrastructure/util"
 	"fmt"
 	"github.com/BurntSushi/toml"
+	"github.com/taosdata/Bailongma/blm_openfalcon/config"
+	"github.com/taosdata/Bailongma/blm_openfalcon/log"
+	"github.com/taosdata/go-utils/util"
 	"regexp"
 )
 

@@ -1,19 +1,21 @@
 package tdengine
 
 import (
-	"bailongma/v2/blm_openfalcon/config"
-	"bailongma/v2/blm_openfalcon/log"
-	"bailongma/v2/blm_openfalcon/metricgroup"
-	"bailongma/v2/blm_openfalcon/model"
-	"bailongma/v2/blm_openfalcon/pool"
-	"bailongma/v2/infrastructure/tdengine/common"
-	"bailongma/v2/infrastructure/tdengine/connector"
-	tdengineExecutor "bailongma/v2/infrastructure/tdengine/executor"
-	"bailongma/v2/infrastructure/util"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	cmodel "github.com/open-falcon/falcon-plus/common/model"
+	"github.com/taosdata/Bailongma/blm_openfalcon/config"
+	"github.com/taosdata/Bailongma/blm_openfalcon/log"
+	"github.com/taosdata/Bailongma/blm_openfalcon/metricgroup"
+	"github.com/taosdata/Bailongma/blm_openfalcon/model"
+	"github.com/taosdata/Bailongma/blm_openfalcon/pool"
+	utilspool "github.com/taosdata/go-utils/pool"
+	"github.com/taosdata/go-utils/tdengine/common"
+	"github.com/taosdata/go-utils/tdengine/connector"
+	tdengineExecutor "github.com/taosdata/go-utils/tdengine/executor"
+	"github.com/taosdata/go-utils/util"
 	"math"
 	"sort"
 	"strings"
@@ -21,7 +23,10 @@ import (
 	"time"
 )
 
-var executor *tdengineExecutor.Executor
+var (
+	ctx      = context.Background()
+	executor *tdengineExecutor.Executor
+)
 
 const (
 	EndpointTagKey  = "openfalcon_endpoint"
@@ -32,15 +37,15 @@ const (
 var tagScheme = []*tdengineExecutor.FieldInfo{
 	{
 		Name:   EndpointTagKey,
-		Type:   common.NCHARType,
+		Type:   common.BINARYType,
 		Length: config.Conf.MaxEndpointLength,
 	}, {
 		Name:   MetricTagKey,
-		Type:   common.NCHARType,
+		Type:   common.BINARYType,
 		Length: config.Conf.MaxMetricLength,
 	}, {
 		Name:   TagMetricTagKey,
-		Type:   common.NCHARType,
+		Type:   common.BINARYType,
 		Length: config.Conf.MaxTagLength,
 	},
 }
@@ -52,7 +57,7 @@ func InsertSingleColumnMetric(metricSingleMap map[string][]*model.MetricValue) e
 		tableName := tn
 		metricList := ml
 		wg.Add(1)
-		err := pool.GoroutinePool.Submit(func() {
+		poolErr := utilspool.GoroutinePool.Submit(func() {
 			defer wg.Done()
 			sort.Slice(metricList, func(i, j int) bool {
 				return metricList[i].Timestamp < metricList[j].Timestamp
@@ -66,7 +71,7 @@ func InsertSingleColumnMetric(metricSingleMap map[string][]*model.MetricValue) e
 				}
 				values = append(values, fmt.Sprintf("%s,%f", second2String(metric.Timestamp), value))
 			}
-			b := pool.BytesPoolGet()
+			b := utilspool.BytesPoolGet()
 			b.WriteByte('\'')
 			b.WriteString(util.EscapeString(metricList[0].Endpoint))
 			b.WriteString("','")
@@ -75,8 +80,9 @@ func InsertSingleColumnMetric(metricSingleMap map[string][]*model.MetricValue) e
 			b.WriteString(util.EscapeString(metricList[0].Tags))
 			b.WriteByte('\'')
 			tags := b.String()
-			pool.BytesPoolPut(b)
+			utilspool.BytesPoolPut(b)
 			err := executor.InsertUsingSTable(
+				ctx,
 				util.ToHashString(tableName),
 				"openfalcon_single_stable",
 				tags,
@@ -87,9 +93,9 @@ func InsertSingleColumnMetric(metricSingleMap map[string][]*model.MetricValue) e
 				log.Logger.WithError(err).Error("insert data error")
 			}
 		})
-		if err != nil {
+		if poolErr != nil {
 			wg.Done()
-			returnErr = err
+			returnErr = poolErr
 		}
 	}
 	wg.Wait()
@@ -107,11 +113,12 @@ func InsertCommonGroupMetric(metricGroupMap map[string][]*model.MetricValue) err
 		fieldNum := len(fields) + 1
 		wg.Add(1)
 		metrics := ms
-		err := pool.GoroutinePool.Submit(func() {
-			process(sTableName, metrics, fieldNum, fieldMap)
+		tb := sTableName
+		poolErr := utilspool.GoroutinePool.Submit(func() {
+			process(tb, metrics, fieldNum, fieldMap)
 			wg.Done()
 		})
-		if err != nil {
+		if poolErr != nil {
 			wg.Done()
 		}
 	}
@@ -123,14 +130,14 @@ func process(sTableName string, metrics []*model.MetricValue, fieldNum int, fiel
 	tableTagMap := map[string][]string{}
 	tableValueMap := map[string]map[int64][]string{}
 	for _, metric := range metrics {
-		b := pool.BytesPoolGet()
+		b := utilspool.BytesPoolGet()
 		b.WriteString(metric.Endpoint)
 		b.WriteByte('/')
 		b.WriteString(sTableName)
 		b.WriteByte('/')
 		b.WriteString(metric.Tags)
 		tableName := b.String()
-		pool.BytesPoolPut(b)
+		utilspool.BytesPoolPut(b)
 		tableTagMap[tableName] = []string{util.EscapeString(metric.Endpoint), util.EscapeString(sTableName), util.EscapeString(metric.Tags)}
 		value, err := metric.ParseValue()
 		if err != nil {
@@ -171,7 +178,7 @@ func process(sTableName string, metrics []*model.MetricValue, fieldNum int, fiel
 		for _, ts := range tsList {
 			fieldValue := tsFieldMap[ts]
 			// 以前添加上的值先查出来再把现在的空值填上
-			data, err := executor.QueryOneFromTable(hashTable, time.Unix(ts, 0))
+			data, err := executor.QueryOneFromTable(ctx,hashTable, time.Unix(ts, 0))
 			if err == nil {
 				if len(data.Data) == 1 && len(data.Data[0]) == len(fieldValue) {
 					for index, v := range data.Data[0] {
@@ -184,6 +191,7 @@ func process(sTableName string, metrics []*model.MetricValue, fieldNum int, fiel
 			value = append(value, slice2String(fieldValue))
 		}
 		err := executor.InsertUsingSTable(
+			ctx,
 			hashTable,
 			sTableName,
 			fmt.Sprintf("'%s'", strings.Join(tableTagMap[tableName], "','")),
@@ -199,7 +207,7 @@ func InsertPatternGroupMetric(metricGroupMap map[string][]*model.MetricValue) er
 	wg := sync.WaitGroup{}
 	for sTableName, ms := range metricGroupMap {
 		//获取超级表定义
-		tableInfo, err := executor.DescribeTable(sTableName)
+		tableInfo, err := executor.DescribeTable(ctx,sTableName)
 		if err != nil {
 			log.Logger.WithError(err).Errorf("describe STable '%s' error", sTableName)
 			return err
@@ -212,11 +220,12 @@ func InsertPatternGroupMetric(metricGroupMap map[string][]*model.MetricValue) er
 		}
 		metrics := ms
 		wg.Add(1)
-		err = pool.GoroutinePool.Submit(func() {
-			process(sTableName, metrics, fieldNum, fieldMap)
+		tn := sTableName
+		poolErr := utilspool.GoroutinePool.Submit(func() {
+			process(tn, metrics, fieldNum, fieldMap)
 			wg.Done()
 		})
-		if err != nil {
+		if poolErr != nil {
 			wg.Done()
 		}
 	}
@@ -226,7 +235,7 @@ func InsertPatternGroupMetric(metricGroupMap map[string][]*model.MetricValue) er
 
 func ModifyTable(sTableName string, metrics []*model.MetricValue) error {
 	//获取超级表信息
-	tableInfo, err := executor.DescribeTable(sTableName)
+	tableInfo, err := executor.DescribeTable(ctx, sTableName)
 	if err != nil {
 		var tdError *common.TDengineError
 		if errors.As(err, &tdError) {
@@ -248,7 +257,7 @@ func ModifyTable(sTableName string, metrics []*model.MetricValue) error {
 					},
 					Tags: tagScheme,
 				}
-				err := executor.CreateSTable(sTableName, tableInfo)
+				err := executor.CreateSTable(ctx,sTableName, tableInfo)
 				if err != nil {
 					log.Logger.WithError(err).Errorf("create STable '%s' error", sTableName)
 					return err
@@ -274,7 +283,7 @@ func ModifyTable(sTableName string, metrics []*model.MetricValue) error {
 		if !tableFieldMap[metric.HashMetric()] {
 			//列不存在创建列
 			log.Logger.Infof("add column %s on STable %s", metric.Metric, sTableName)
-			err := executor.AddColumn(common.STableType, sTableName, &tdengineExecutor.FieldInfo{
+			err := executor.AddColumn(ctx,common.STableType, sTableName, &tdengineExecutor.FieldInfo{
 				Name: metric.HashMetric(),
 				Type: common.DOUBLEType,
 			})
@@ -406,7 +415,7 @@ func QueryMetric(
 			ColumnList: []string{"value"},
 		})
 	}
-	data, err := executor.Query(req)
+	data, err := executor.Query(ctx,req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -466,7 +475,7 @@ func QueryMetricDirectly(
 		ColumnList: []string{column},
 	})
 	s1 := time.Now()
-	data, err := executor.Query(req)
+	data, err := executor.Query(ctx,req)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +523,7 @@ func buildCounter(metric string, tags map[string]interface{}) string {
 
 func initSingleSTable() {
 	//建立单列超级表
-	err := executor.CreateSTable("openfalcon_single_stable", &tdengineExecutor.TableInfo{
+	err := executor.CreateSTable(ctx,"openfalcon_single_stable", &tdengineExecutor.TableInfo{
 		Fields: []*tdengineExecutor.FieldInfo{
 			{
 				Name:   "value",
@@ -541,7 +550,7 @@ func initGroupStable(groups map[string]*metricgroup.Config) {
 					Length: 0,
 				})
 			}
-			err := executor.CreateSTable(sTableName, &tdengineExecutor.TableInfo{
+			err := executor.CreateSTable(ctx,sTableName, &tdengineExecutor.TableInfo{
 				Fields: fields,
 				Tags:   tagScheme,
 			})
@@ -553,22 +562,18 @@ func initGroupStable(groups map[string]*metricgroup.Config) {
 }
 
 func createDB() {
-	err := executor.CreateDatabase(config.Conf.DataKeep)
+	err := executor.CreateDatabase(ctx,config.Conf.DataKeep,1)
 	if err != nil {
 		panic(err)
 	}
-	err = executor.AlterDatabase("CACHELAST", config.Conf.CacheLast)
-	if err != nil {
-		panic(err)
-	}
-	err = executor.UseDatabase()
+	err = executor.AlterDatabase(ctx,"CACHELAST", config.Conf.CacheLast)
 	if err != nil {
 		panic(err)
 	}
 }
 
 func setPrecision() {
-	precision, err := executor.GetPrecision()
+	precision, err := executor.GetPrecision(ctx)
 	if err != nil {
 		panic(err)
 	}

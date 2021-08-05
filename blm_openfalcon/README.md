@@ -85,6 +85,7 @@ insert into openfalcon.md5_23ca9bd06bcc2d28b9b3d30042587b86 using openfalcon.ope
 ```
 
 ### 配置文件
+
 ```toml
 #开启调试
 Debug = true
@@ -136,11 +137,12 @@ MaxOpen = 200
 MaxLifetime = 30
 ```
 
-
 ## 数据查询
-修改 open-falcon graph 组件将查询通过 HTTP 请求发送到 Bailongma 
+
+修改 open-falcon graph 组件将查询通过 HTTP 请求发送到 Bailongma
 
 ## 优化过程
+
 1. 插入和查询 sql 语句 使用 bytes.Buffer 组装
 2. 查询结果数据量大进行分片异步处理
 3. 对需要大量创建的对象构建对象池减少创建对象耗时

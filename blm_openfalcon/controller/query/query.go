@@ -1,16 +1,17 @@
 package query
 
 import (
-	"bailongma/v2/blm_openfalcon/metricgroup"
-	"bailongma/v2/blm_openfalcon/model"
-	"bailongma/v2/blm_openfalcon/pool"
-	"bailongma/v2/blm_openfalcon/tdengine"
-	"bailongma/v2/infrastructure/util"
-	"bailongma/v2/infrastructure/web"
 	"errors"
 	"github.com/gin-gonic/gin"
 	cmodel "github.com/open-falcon/falcon-plus/common/model"
 	"github.com/open-falcon/falcon-plus/modules/api/app/helper"
+	"github.com/taosdata/Bailongma/blm_openfalcon/metricgroup"
+	"github.com/taosdata/Bailongma/blm_openfalcon/model"
+	"github.com/taosdata/Bailongma/blm_openfalcon/pool"
+	"github.com/taosdata/Bailongma/blm_openfalcon/tdengine"
+	utilspool "github.com/taosdata/go-utils/pool"
+	"github.com/taosdata/go-utils/util"
+	"github.com/taosdata/go-utils/web"
 	"net/http"
 	"strings"
 	"time"
@@ -131,14 +132,14 @@ func (ctl *Query) graphQuery(c *gin.Context) {
 		return
 	}
 	fill := "LINEAR"
-	b := pool.BytesPoolGet()
+	b := utilspool.BytesPoolGet()
 	b.WriteString(req.Endpoint)
 	b.WriteByte('/')
 	b.WriteString(metric)
 	b.WriteByte('/')
 	b.WriteString(tag)
 	tableName := util.ToHashString(b.String())
-	pool.BytesPoolPut(b)
+	utilspool.BytesPoolPut(b)
 	queryData, err := tdengine.QueryMetricDirectly(tableName, column, start, end, interval, aggregation, fill)
 	if err != nil {
 		ctl.errorResponse(c, http.StatusInternalServerError, err)

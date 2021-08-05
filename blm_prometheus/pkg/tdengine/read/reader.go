@@ -16,12 +16,12 @@
 package read
 
 import (
-	"bailongma/v2/blm_prometheus/pkg/log"
-	"bailongma/v2/blm_prometheus/pkg/tdengine/write"
 	"database/sql"
 	"fmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/taosdata/Bailongma/blm_prometheus/pkg/log"
+	"github.com/taosdata/Bailongma/blm_prometheus/pkg/tdengine/write"
 	"strings"
 	"time"
 )

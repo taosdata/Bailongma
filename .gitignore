@@ -8,3 +8,5 @@
 *.njsproj
 *.sln
 **/logs/
+/blm_openfalcon/testdata/
+/config/

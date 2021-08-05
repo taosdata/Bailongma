@@ -16,12 +16,12 @@
 package main
 
 import (
-	"bailongma/v2/blm_prometheus/pkg/tdengine"
-	"bailongma/v2/blm_prometheus/pkg/tdengine/write"
 	"bufio"
 	"database/sql"
 	"flag"
 	"fmt"
+	"github.com/taosdata/Bailongma/blm_prometheus/pkg/tdengine"
+	"github.com/taosdata/Bailongma/blm_prometheus/pkg/tdengine/write"
 	"io"
 	"io/ioutil"
 	"log"
@@ -35,11 +35,11 @@ import (
 	"sync"
 	"time"
 
-	logger "bailongma/v2/blm_prometheus/pkg/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	logger "github.com/taosdata/Bailongma/blm_prometheus/pkg/log"
 	_ "github.com/taosdata/driver-go/taosSql"
 )
 

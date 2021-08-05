@@ -1,11 +1,12 @@
 package config
 
 import (
-	"bailongma/v2/infrastructure/tdengine/common"
-	tdengineConfig "bailongma/v2/infrastructure/tdengine/config"
-	"bailongma/v2/infrastructure/util"
-	"bailongma/v2/infrastructure/web"
 	"github.com/BurntSushi/toml"
+	poolConfig "github.com/taosdata/go-utils/pool/config"
+	"github.com/taosdata/go-utils/tdengine/common"
+	tdengineConfig "github.com/taosdata/go-utils/tdengine/config"
+	"github.com/taosdata/go-utils/util"
+	"github.com/taosdata/go-utils/web"
 	"log"
 )
 
@@ -81,5 +82,6 @@ func init() {
 	if conf.GoPoolSize == 0 {
 		conf.GoPoolSize = 50000
 	}
+	poolConfig.GoPoolSize = conf.GoPoolSize
 	Conf = &conf
 }

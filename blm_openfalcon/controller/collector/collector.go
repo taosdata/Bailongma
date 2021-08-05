@@ -1,13 +1,13 @@
 package collector
 
 import (
-	"bailongma/v2/blm_openfalcon/log"
-	"bailongma/v2/blm_openfalcon/metricgroup"
-	"bailongma/v2/blm_openfalcon/model"
-	"bailongma/v2/blm_openfalcon/pool"
-	"bailongma/v2/blm_openfalcon/tdengine"
-	"bailongma/v2/infrastructure/web"
 	"github.com/gin-gonic/gin"
+	"github.com/taosdata/Bailongma/blm_openfalcon/log"
+	"github.com/taosdata/Bailongma/blm_openfalcon/metricgroup"
+	"github.com/taosdata/Bailongma/blm_openfalcon/model"
+	"github.com/taosdata/Bailongma/blm_openfalcon/tdengine"
+	"github.com/taosdata/go-utils/pool"
+	"github.com/taosdata/go-utils/web"
 )
 
 type Collector struct {

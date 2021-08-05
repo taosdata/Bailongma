@@ -1,10 +1,9 @@
 package main
 
 import (
-	"github.com/taosdata/Bailongma/blm_openfalcon/config"
-
 	"fmt"
-	_ "github.com/taosdata/Bailongma/blm_openfalcon/controller"
+	"github.com/taosdata/Bailongma/blm_nightingale/config"
+	_ "github.com/taosdata/Bailongma/blm_nightingale/controller"
 	"github.com/taosdata/go-utils/web"
 	"golang.org/x/sync/errgroup"
 	"net/http"
@@ -29,7 +28,8 @@ func runWebServer() error {
 	fmt.Printf("start web on :%d\n", conf.Port)
 	router := web.CreateRouter(conf.Debug, &conf.Cors, conf.EnableGzip)
 	for _, controller := range web.Controllers {
-		controller.Init(router)
+		api := router.Group("api/v1")
+		controller.Init(api)
 	}
 	server := &http.Server{
 		Addr:              ":" + strconv.Itoa(conf.Port),

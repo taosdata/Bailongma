@@ -1,9 +1,9 @@
 package model
 
 import (
-	"bailongma/v2/infrastructure/util"
 	"errors"
 	"github.com/open-falcon/falcon-plus/common/model"
+	"github.com/taosdata/go-utils/util"
 	"strconv"
 )
 
