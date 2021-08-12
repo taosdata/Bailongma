@@ -42,6 +42,11 @@ jobs:
           cd blm_openfalcon
           go build
 
+      - name: Build blm_n9e
+        run: |
+          cd blm_nightingale
+          go build
+
       - name: Start blm_prometheus
         run: |
           nohup taosd > taosd.log 2>&1 &
