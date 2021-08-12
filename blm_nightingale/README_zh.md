@@ -1,5 +1,6 @@
 # Nightingale V5 对接
 
+夜莺是新一代国产智能监控系统。对云原生场景、传统物理机虚拟机场景，都有很好的支持  
 Nightingale V5 使用 remote_read 和 remote_write
 
 ## 配置文件

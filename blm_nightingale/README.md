@@ -1,7 +1,6 @@
 # blm integration with n9e
-using remote_read and remote_write  
-
-[中文文档](./README_zh.md)
+[中文文档](./README_zh.md)  
+Nightingale is a new generation of intelligent monitoring system. It has good support for cloud native scenes and traditional physical machine virtual machine scenes.
 ## Configure
 Configure relative execution directory `./config/blm_n9e_v5.toml`  
 Or `-c` parameter to specify the configuration file path
