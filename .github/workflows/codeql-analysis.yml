@@ -62,9 +62,8 @@ jobs:
         cd TDengine-client-${TDENGINE_VERSION}
         ./install_client.sh
         cd ../
-        cd blm_telegraf
-        go mod init blm_telegraf
         go mod tidy
+        cd blm_telegraf
         go build
         cd ..
 
