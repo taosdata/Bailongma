@@ -54,7 +54,19 @@ jobs:
     # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
     # If this step fails, then you should remove it and run the build manually (see below)
     - name: Autobuild
-      uses: github/codeql-action/autobuild@v1
+      # uses: github/codeql-action/autobuild@v1
+      run: |
+        export TDENGINE_VERSION=2.1.6.0
+        wget -c https://www.taosdata.com/assets-download/TDengine-client-${TDENGINE_VERSION}-beta-Linux-x64.tar.gz
+        tar xvf TDengine-client-${TDENGINE_VERSION}-beta-Linux-x64.tar.gz
+        cd TDengine-client-${TDENGINE_VERSION}
+        ./install_client.sh
+        cd ../
+        cd blm_telegraf
+        go mod init blm_telegraf
+        go mod tidy
+        go build
+        cd ..
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 https://git.io/JvXDl
