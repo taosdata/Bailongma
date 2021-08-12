@@ -13,7 +13,7 @@ require (
 	github.com/open-falcon/falcon-plus v0.2.2
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/spf13/viper v1.8.1 // indirect
-	github.com/taosdata/go-utils v0.0.0-20210804102805-f8cacb4f7f6d
+	github.com/taosdata/go-utils v0.0.0-20210811075537-2ce661ccb743
 	github.com/toolkits/cache v0.0.0-20190218093630-cfb07b7585e5 // indirect
 	github.com/toolkits/conn_pool v0.0.0-20170512061817-2b758bec1177 // indirect
 	github.com/toolkits/consistent v0.0.0-20150827090850-a6f56a64d1b1 // indirect

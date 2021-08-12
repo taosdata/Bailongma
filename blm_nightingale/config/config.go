@@ -132,6 +132,7 @@ func init() {
 			MetricGroups[i] = c.Metrics
 		}
 	}
+	trie.Sep = "_"
 	searchTree = trie.New()
 	DefaultMetricGroupID = -1
 	for i, group := range MetricGroups {

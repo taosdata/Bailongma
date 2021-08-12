@@ -6,7 +6,7 @@ import (
 	"github.com/taosdata/Bailongma/blm_nightingale/config"
 	"github.com/taosdata/Bailongma/blm_nightingale/log"
 	"github.com/taosdata/Bailongma/blm_nightingale/model"
-	"github.com/taosdata/driver-go/taosSql"
+	tdengineErrors "github.com/taosdata/driver-go/errors"
 	"github.com/taosdata/go-utils/pool"
 	"github.com/taosdata/go-utils/tdengine/common"
 	"github.com/taosdata/go-utils/tdengine/connector"
@@ -114,7 +114,7 @@ func (e *Executor) doInsertData(points []*model.MetricPoint) {
 				}
 			}
 			switch int32(tdErr.Code) {
-			case taosSql.CODE_MND_INVALID_TABLE_NAME:
+			case tdengineErrors.MND_INVALID_TABLE_NAME:
 				//超级表不存在
 				//创建超级表
 				tagList := make([]string, 0, len(tagMap))
@@ -129,7 +129,7 @@ func (e *Executor) doInsertData(points []*model.MetricPoint) {
 				if err != nil {
 					return
 				}
-			case taosSql.CODE_TSC_INVALID_OPERATION:
+			case tdengineErrors.TSC_INVALID_OPERATION:
 				//tag 不存在
 				err = e.modifyTag(stableName, tagMap)
 				if err != nil {
@@ -170,7 +170,7 @@ func (e *Executor) modifyTag(stableName string, tagMap map[string]struct{}) erro
 			if err != nil {
 				var addTagErr *common.TDengineError
 				if errors.As(err, &addTagErr) {
-					if addTagErr.Code == int(taosSql.CODE_TSC_INVALID_OPERATION) {
+					if addTagErr.Code == int(tdengineErrors.TSC_INVALID_OPERATION) {
 						//字段错误说明已存在
 						continue
 					} else {
@@ -211,7 +211,7 @@ func (e *Executor) createStable(stableName string, tagList []string) error {
 		var tdErr *common.TDengineError
 		if errors.As(err, &tdErr) {
 			switch int32(tdErr.Code) {
-			case taosSql.CODE_MND_TABLE_ALREADY_EXIST:
+			case tdengineErrors.MND_TABLE_ALREADY_EXIST:
 				//表已经创建,返回正常
 			default:
 				log.Logger.WithError(tdErr).Error("create stable error")
@@ -231,9 +231,9 @@ func (e *Executor) generateInsertSql(tableName string, stableName string, tagFie
 	b.WriteString(e.executor.WithDBName(tableName))
 	b.WriteString(" using ")
 	b.WriteString(e.executor.WithDBName(stableName))
-	b.WriteString(" ('")
-	b.WriteString(strings.Join(tagFields, "','"))
-	b.WriteString("')")
+	b.WriteString(" (")
+	b.WriteString(strings.Join(tagFields, ","))
+	b.WriteString(")")
 	b.WriteString(" tags ('")
 	b.WriteString(strings.Join(tagValues, "','"))
 	b.WriteString("') values ('")

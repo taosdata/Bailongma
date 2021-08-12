@@ -25,7 +25,7 @@ LogLevel = "info"
 #goroutinue 池大小
 GoPoolSize = 50000
 #每个db连接的worker
-InsertWorkerPreDBGroup = 5
+InsertWorkerPreDBGroup = 100
 
 [[TDengineGoGroup]]
 #地址
@@ -36,9 +36,9 @@ MaxIdle = 20
 MaxOpen = 200
 #连接最长生命周期（秒）
 MaxLifetime = 30
-#指标分组 以 '.' 分割, '?' 代表一个字符串 '*' 代表0个或多个字符串
-#"A.?" 可以匹配 "A.A" "A.B" "A.C" 不可以匹配 "A" "A.B.C"
-#"A.*" 可以匹配 "A.A" "A.B" "A.C" "A" "A.B.C"
+#指标分组 以 '_' 分割, '?' 代表一个字符串 '*' 代表0个或多个字符串
+#"A_?" 可以匹配 "A_A" "A_B" "A_C" 不可以匹配 "A" "A_B_C"
+#"A_*" 可以匹配 "A_A" "A_B" "A_C" "A" "A_B_C"
 #'?' 匹配优先级大于 '*'
 #所有分组汇总后一定要存在一个 '*' 作为未匹配到的默认项
 Metrics = ['*']
@@ -52,7 +52,7 @@ Metrics = ['*']
 #MaxOpen = 200
 ##连接最长生命周期（秒）
 #MaxLifetime = 30
-#metrics = ['cpu.*']
+#metrics = ['cpu_*']
 #
 #[[TDengineRestfulGroup]]
 ##连接地址
@@ -78,4 +78,4 @@ Metrics = ['*']
 #Password = "taosdata"
 ##每个host最大连接数 -1代表无限制
 #MaxConnsPerHost = 10
-#metrics = ['cpu.*']
+#metrics = ['cpu_*']

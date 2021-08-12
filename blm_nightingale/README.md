@@ -1,122 +1,111 @@
-# Nightingale V5 对接
+# blm integration with n9e
+using remote_read and remote_write  
 
-Nightingale V5 使用 remote_read 和 remote_write
-
-## 配置文件
-配置相对执行目录 `./config/blm_n9e_v5.toml`  
-或 `-c` 参数指定配置文件路径  
-样例
+[中文文档](./README_zh.md)
+## Configure
+Configure relative execution directory `./config/blm_n9e_v5.toml`  
+Or `-c` parameter to specify the configuration file path
+Sample
 ```toml
-#开启调试
+# dubug mod
 Debug = true
-#http端口
+#http port
 Port = 9090
-#db名称
+#db name
 DBName = "n9e"
-#tdengine连接方式 restful go
+#tdengine connection type [restful go]
 TDengineConnType = "go"
-#最长 endpoint 长度
+#max endpoint length
 MaxEndpointLength = 256
-#最长标签值长度
+#max tag length
 MaxTagLength = 256
-#最长指标长度
+#max metric length
 MaxMetricLength = 256
-#数据保存天数
+#data storage days
 DataKeep = 3650
-#历史数据插入策略
+#historical data insertion strategy
 Update = 1
-#是否显示 SQL
+#whether to display SQL
 ShowSQL = true
-#是否启用 GZip
+#whether to enable GZip
 EnableGzip = false
-#日志等级 "panic" "fatal" "error" "warn" "info" "debug" "trace"
+#log level "panic" "fatal" "error" "warn" "info" "debug" "trace"
 LogLevel = "info"
-#goroutinue 池大小
+#goroutinue pool size
 GoPoolSize = 50000
-#每个db连接的worker
+#insert workers pre db connection
 InsertWorkerPreDBGroup = 5
 
 [[TDengineGoGroup]]
-#地址
+#address
 Address = "root:taosdata@/tcp(127.0.0.1:6030)/"
-#最大空闲连接
+#max idle
 MaxIdle = 20
-#最大连接数
+#maximum number of connections
 MaxOpen = 200
-#连接最长生命周期（秒）
+#Maximum connection lifetime (seconds)
 MaxLifetime = 30
 Metrics = ['cpu.*']
 [[TDengineGoGroup]]
-#地址
 Address = "root:taosdata@/tcp(node159:6030)/"
-#最大空闲连接
 MaxIdle = 20
-#最大连接数
 MaxOpen = 200
-#连接最长生命周期（秒）
 MaxLifetime = 30
-#指标分组 以 '.' 分割, '?' 代表一个字符串 '*' 代表0个或多个字符串 
-#"A.?" 可以匹配 "A.A" "A.B" "A.C" 不可以匹配 "A" "A.B.C"
-#"A.*" 可以匹配 "A.A" "A.B" "A.C" "A" "A.B.C"
-#'?' 匹配优先级大于 '*'
-#所有分组汇总后一定要存在一个 '*' 作为未匹配到的默认项
+#metric grouping is divided by'_','?' represents a string and'*' represents 0 or more strings
+#"A_?" can match "A_A" "A_B" "A_C" cannot match "A" "A_B_C"
+#"A_*" can match "A_A" "A_B" "A_C" "A" "A_B_C"
+#'?' match priority is greater than'*'
+#After all grouping and summarization, there must be a'*' as the default item that is not matched
 metrics = ['*']
 
 [[TDengineRestfulGroup]]
-#连接地址
+#address
 Address = "http://127.0.0.1:6041"
-#验证方式 Basic Taosd
+#auth type [Basic Taosd]
 AuthType = "Basic"
-#用户名
+#username
 Username = "root"
-#密码
+#password
 Password = "taosdata"
-#每个host最大连接数 -1代表无限制
+#Maximum number of connections per host -1 means unlimited
 MaxConnsPerHost = 10
-Metrics = ['cpu.*']
+Metrics = ['cpu_*']
 
 [[TDengineRestfulGroup]]
-#连接地址
 Address = "http://192.168.1.159:6041"
-#验证方式 Basic Taosd
 AuthType = "Basic"
-#用户名
 Username = "root"
-#密码
 Password = "taosdata"
-#每个host最大连接数 -1代表无限制
 MaxConnsPerHost = 10
 metrics = ['*']
 ```
 
-`TDengineConnType` 如果为 go 会按顺序读取 TDengineGoGroup,如果为 restful 会按顺序读取 TDengineRestfulGroup
+`TDengineConnType` If it is "go", it will read TDengineGoGroup in order, if it is "restful", it will read TDengineRestfulGroup in order
+All programs need to read the same configuration file
 
-所有程序需要读取同一份配置文件
+## Compilation
+1. Install TDengine client first under linux [TDengine DOC](https://www.taosdata.com/cn/getting-started/)
+2. Prepare golang environment [install golang](https://golang.org/doc/install) 1.14 or later version
+3. Compile
+   1. execute `go build -o blm_n9e`
 
-## 编译方法
-1. linux 下先安装 TDengine 客户端 [TDengine 文档](https://www.taosdata.com/cn/getting-started/)
-2. 准备 golang 环境 [安装golang](https://golang.google.cn/doc/install) 1.14以上版本
-3. 编译 
-   1. 设置 go mod proxy `go env -w GOPROXY=https://goproxy.cn,direct`
-   2. 执行 `go build -t blm_n9e`
+## Build docker image
+Modify `tdengine_ver` in `Dockerfile` to TDengine version, and `extension` to suffix
 
-## docker 构建 image
-修改`Dockerfile`中 tdengine_ver 为 TDengine 版本, extension 为后缀
-如
 ```dockerfile
 ARG tdengine_ver=2.1.5.0
-# 如果是beta版本写 -beta 其他留空
+# If it is a beta version, write `-beta`, otherwise leave it blank
 ARG extension=-beta
 ```
-构建
+build
 ```shell
 docker build -t blm_n9e:latest
 ```
-运行
+run
 ```shell
 docker run -d --name=blm_n9e_node1 -p 9090:9090 -v /path_to_config:/root/config blm_n9e:latest
 ```
-`/path_to_config`填写主机上对应配置文件夹的绝对路径
+`/path_to_config` fill in the absolute path of the corresponding configuration folder on the host
 
-## 手动安装指令
-见 [安装脚本](./install_shell.sh)
+## Manual installation instructions
+check [install_shell.sh](./install_shell.sh)

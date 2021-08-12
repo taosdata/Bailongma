@@ -111,10 +111,10 @@ github.com/stretchr/testify v1.4.0/go.mod h1:j7eGeouHqKxXV5pUuKE4zz7dFj8WfuZ+81P
 github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5cxcmMvtA=
 github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
-github.com/taosdata/driver-go v0.0.0-20210803110006-be7b78e9b36b h1:Vnq4YWVolSLbbz69LWJX2eKTrIi1e091R7pRATxz5U8=
-github.com/taosdata/driver-go v0.0.0-20210803110006-be7b78e9b36b/go.mod h1:k0UvvUy5mlSz4M+InxT3MZYO/eaTWXs7hO9ndLTeevU=
-github.com/taosdata/go-utils v0.0.0-20210804102805-f8cacb4f7f6d h1:kGlsP2dU3dAhSs3z+kVxAwhciFPrn9Xy3mkOo01obYQ=
-github.com/taosdata/go-utils v0.0.0-20210804102805-f8cacb4f7f6d/go.mod h1:t0FoXa/UM45jnD+BJ/GXnk4vXVJ5UuTiNg6z9rSYgGo=
+github.com/taosdata/driver-go v0.0.0-20210811072315-2cda9f1dc9ed h1:inSmPB0XSiyPZ6B66KnMsfyVVshH0mg2L0ld1b2aLtA=
+github.com/taosdata/driver-go v0.0.0-20210811072315-2cda9f1dc9ed/go.mod h1:k0UvvUy5mlSz4M+InxT3MZYO/eaTWXs7hO9ndLTeevU=
+github.com/taosdata/go-utils v0.0.0-20210811075537-2ce661ccb743 h1:w90OkSLXv4d7uEcU8fH70pB5tawNYYZ1qjhDfg7oFTQ=
+github.com/taosdata/go-utils v0.0.0-20210811075537-2ce661ccb743/go.mod h1:WRQlPHYbVvsRmtIDJ4GS31BbiTQnFHFdhh0XpLavTIg=
 github.com/ugorji/go v1.1.7 h1:/68gy2h+1mWMrwZFeD1kQialdSzAb432dtpeJ42ovdo=
 github.com/ugorji/go v1.1.7/go.mod h1:kZn38zHttfInRq0xu/PH0az30d+z6vm202qpg1oXVMw=
 github.com/ugorji/go/codec v1.1.7 h1:2SvQaVZ1ouYrrKKwoSk2pzd4A9evlKJb9oTL+OaLUSs=

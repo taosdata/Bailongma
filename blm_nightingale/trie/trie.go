@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const (
+var (
 	// SingleTokenWildcard 指代一个
 	SingleTokenWildcard = "?"
 	// MultipleTokenWildcard 指代零个或任意多个

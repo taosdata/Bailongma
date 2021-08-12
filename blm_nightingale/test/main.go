@@ -9,12 +9,21 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 )
 
 func main() {
 	//remoteWrite()
-	remoteRead()
+	wg := sync.WaitGroup{}
+	wg.Add(100)
+	for i := 0; i < 1000; i++ {
+		go func() {
+			remoteRead()
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 }
 
 func remoteWrite() {
@@ -103,7 +112,7 @@ func remoteWrite() {
 	}
 	fmt.Println(resp.StatusCode, string(d))
 }
-func remoteRead(){
+func remoteRead() {
 	data := prompb.ReadRequest{Queries: []*prompb.Query{
 		{
 			StartTimestampMs: 1628056181000,
@@ -120,9 +129,9 @@ func remoteRead(){
 				//	Value: "中文测试",
 				//},
 				{
-					Type:  prompb.LabelMatcher_EQ,
+					Type:  prompb.LabelMatcher_NRE,
 					Name:  "__name__",
-					Value: "system_mem_free",
+					Value: ".*a.*|.*e.*",
 				},
 			},
 		},
