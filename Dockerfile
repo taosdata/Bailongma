@@ -21,13 +21,14 @@ COPY TDengine-server-$tdengine_ver-Linux-x64.tar.gz /root/
 RUN tar -zxf TDengine-server-$tdengine_ver-Linux-x64.tar.gz
 WORKDIR /root/TDengine-server-$tdengine_ver/
 RUN /root/TDengine-server-$tdengine_ver/install.sh -e no
-COPY blm_telegraf/server.go /root/blm_telegraf/
-COPY blm_prometheus/server.go /root/blm_prometheus/
+COPY blm_telegraf /root/blm_telegraf/
+COPY blm_prometheus /root/blm_prometheus/
 
 #RUN mkdir /usr/lib/ld
 
 WORKDIR /root/
-RUN go mod init bailongma.com/m/v2
+RUN go mod init bailongma/v2 && \
+    go mod tidy
 
 WORKDIR /root/blm_telegraf/
 RUN go build 
@@ -43,4 +44,3 @@ WORKDIR /root
 
 COPY --from=builder /root/blm_telegraf/blm_telegraf /root/
 COPY --from=builder /root/blm_prometheus/blm_prometheus /root/
-
