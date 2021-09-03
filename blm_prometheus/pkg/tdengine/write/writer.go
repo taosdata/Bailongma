@@ -266,14 +266,16 @@ func HandleStable(ts *prompb.TimeSeries, db *sql.DB) error {
 			}
 			if i == 0 {
 				if has {
-					sqlcmd = sqlcmd + "\"" + tagValue + "\""
+					// 双引号引起的问题
+					sqlcmd = sqlcmd + "\"" + strings.ReplaceAll(tagValue, "\"", "'") + "\""
 				} else {
 					sqlcmd = sqlcmd + "null"
 				}
 				i++
 			} else {
 				if has {
-					sqlcmd = sqlcmd + ",\"" + tagValue + "\""
+					// 双引号引起的问题
+					sqlcmd = sqlcmd + ",\"" + strings.ReplaceAll(tagValue, "\"", "'") + "\""
 				} else {
 					sqlcmd = sqlcmd + ",null"
 				}
@@ -358,7 +360,7 @@ func serializeTDengine(m *prompb.TimeSeries, tbn string, db *sql.DB) error {
 	vl := m.Samples[0].GetValue()
 	vls := strconv.FormatFloat(vl, 'E', -1, 64)
 
-	if vls == "NaN" {
+	if vls == "NaN" || vls == "+Inf" || vls == "-Inf" {
 		vls = "null"
 	}
 	tl := m.Samples[0].GetTimestamp()
