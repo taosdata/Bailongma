@@ -16,21 +16,20 @@
 package write
 
 import (
-	"bailongma/v2/blm_prometheus/pkg/log"
 	"container/list"
 	"crypto/md5"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
+	"github.com/taosdata/Bailongma/blm_prometheus/pkg/log"
 	"io/ioutil"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/prompb"
 )
 
 type WriterProcessor struct {

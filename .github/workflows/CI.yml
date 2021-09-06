@@ -18,7 +18,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v1
         with:
-          go-version: 1.15
+          go-version: 1.14
 
       - name: Install build-essential
         run: apt-get update && apt-get install -y build-essential
@@ -26,7 +26,6 @@ jobs:
       - name: Go mod
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
-          go mod init bailongma/v2
           go mod tidy
       - name: Build blm_prometheus
         run: |
@@ -36,6 +35,16 @@ jobs:
       - name: Build blm_telegraf
         run: |
           cd blm_telegraf
+          go build
+
+      - name: Build blm_openfalcon
+        run: |
+          cd blm_openfalcon
+          go build
+
+      - name: Build blm_n9e
+        run: |
+          cd blm_nightingale
           go build
 
       - name: Start blm_prometheus

@@ -11,11 +11,10 @@ TDengine在原生连接器通过TAOS SQL写入数据之外，还支持通过API�
 目前bailongma需要从源码进行编译后运行，因此需要从github上下载Bailongma的源码后，使用Golang语言编译器编译生成可执行文件。
 在开始编译前，需要准备好以下条件：
 - Linux操作系统的服务器
-- 安装好Golang，1.10版本以上
+- 安装好Golang，1.14版本以上
 - 对应的TDengine版本。因为用到了TDengine的客户端动态链接库，因此需要安装好和服务端相同版本的TDengine程序；比如服务端版本是TDengine 2.0.0,则在bailongma所在的linux服务器（可以与TDengine在同一台服务器，或者不同服务器）
   Bailongma项目中有两个文件夹blm_prometheus和blm_telegraf，分别存放了prometheus和Telegraf的写入API程序，编译方法都相同。以prometheus写入程序为例，编译过程如下
-```
-go mod init bailongma/v2 
+```shell
 
 cd blm_prometheus
 go build

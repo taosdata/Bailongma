@@ -4,7 +4,7 @@ This is an API to support Telegraf writing data into TDengine.
 
 ## prerequisite
 
-before running the software, you need to install the `golang-1.10` or later version in your environment and install [TDengine][] so the program can use the lib of TDengine.
+before running the software, you need to install the `golang-1.14` or later version in your environment and install [TDengine][] so the program can use the lib of TDengine.
 
 To use it:
 

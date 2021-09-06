@@ -8,7 +8,5 @@
 *.njsproj
 *.sln
 **/logs/
-go.sum
-go.mod
-**/go.sum
-**/go.mod
+/blm_openfalcon/testdata/
+/config/
