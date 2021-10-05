@@ -57,10 +57,14 @@ jobs:
       # uses: github/codeql-action/autobuild@v1
       run: |
         export TDENGINE_VERSION=2.1.6.0
-        wget -c https://www.taosdata.com/assets-download/TDengine-client-${TDENGINE_VERSION}-beta-Linux-x64.tar.gz
-        tar xvf TDengine-client-${TDENGINE_VERSION}-beta-Linux-x64.tar.gz
-        cd TDengine-client-${TDENGINE_VERSION}
-        ./install_client.sh
+        wget -c https://github.com/taosdata/TDengine/archive/refs/tags/ver-2.2.0.5.tar.gz
+        tar xvf ver-2.2.0.5.tar.gz
+        cd TDengine-ver-2.2.0.5
+        mkdir debug
+        cd debug
+        cmake .. -DBUILD_JDBC=false
+        make
+        make install
         cd ../
         cd blm_telegraf
         go mod init blm_telegraf
