@@ -26,7 +26,6 @@ jobs:
       - name: Go mod
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
-          go mod tidy
       - name: Build blm_prometheus
         run: |
           cd blm_prometheus
