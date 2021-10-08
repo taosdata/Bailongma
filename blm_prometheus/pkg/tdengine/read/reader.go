@@ -16,11 +16,11 @@
 package read
 
 import (
-	"bailongma/v2/blm_prometheus/pkg/log"
-	"bailongma/v2/blm_prometheus/pkg/tdengine/write"
 	"bytes"
 	"database/sql"
 	"fmt"
+	"github.com/taosdata/Bailongma/blm_prometheus/pkg/log"
+	"github.com/taosdata/Bailongma/blm_prometheus/pkg/tdengine/write"
 	"regexp"
 	"sort"
 	"strings"

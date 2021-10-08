@@ -16,12 +16,12 @@
 package write
 
 import (
-	"bailongma/v2/blm_prometheus/pkg/log"
 	"container/list"
 	"crypto/md5"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/taosdata/Bailongma/blm_prometheus/pkg/log"
 	"io/ioutil"
 	"net/http"
 	"sort"
