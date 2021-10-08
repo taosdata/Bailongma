@@ -9,16 +9,16 @@ import (
 	"net/http"
 )
 
-type Collector struct {
+type Controller struct {
 	web.BaseController
 }
 
-func (ctl *Collector) Init(router gin.IRouter) {
+func (ctl *Controller) Init(router gin.IRouter) {
 	api := router.Group("read")
 	api.POST("", ctl.read)
 }
 
-func (ctl *Collector) read(c *gin.Context) {
+func (ctl *Controller) read(c *gin.Context) {
 	data, err := c.GetRawData()
 	if err != nil {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
@@ -50,7 +50,7 @@ func (ctl *Collector) read(c *gin.Context) {
 	c.Data(http.StatusAccepted, "application/x-protobuf", compressed)
 }
 func init() {
-	collector := &Collector{
+	collector := &Controller{
 		BaseController: web.BaseController{},
 	}
 	web.AddController(collector)

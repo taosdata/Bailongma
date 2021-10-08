@@ -2,53 +2,48 @@ package tdengine
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/taosdata/Bailongma/blm_nightingale/config"
 	"github.com/taosdata/Bailongma/blm_nightingale/log"
 	"github.com/taosdata/Bailongma/blm_nightingale/model"
-	tdengineErrors "github.com/taosdata/driver-go/errors"
 	"github.com/taosdata/go-utils/pool"
 	"github.com/taosdata/go-utils/tdengine/common"
 	"github.com/taosdata/go-utils/tdengine/connector"
 	tdengineExecutor "github.com/taosdata/go-utils/tdengine/executor"
-	"github.com/taosdata/go-utils/util"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
-const (
-	EndpointTagKey = "_ident"
-	MaxColLen      = 64
-	MaxTableLen    = 192
-)
+const TableName = "metrics"
 
-var tagScheme = []*tdengineExecutor.FieldInfo{
-	{
-		Name:   EndpointTagKey,
-		Type:   common.BINARYType,
-		Length: config.Conf.MaxEndpointLength,
-	},
-}
-
+var e *Executor
 var valueField = []*tdengineExecutor.FieldInfo{
 	{
 		Name: "value",
 		Type: common.DOUBLEType,
 	},
 }
-
-var ExecutorGroup []*Executor
+var tagField = []*tdengineExecutor.FieldInfo{
+	{
+		Name: "labels",
+		Type: "json(512)",
+	},
+}
 
 type Executor struct {
 	executor   *tdengineExecutor.Executor
-	index      int
 	insertChan chan []*model.MetricPoint
 	ctx        context.Context
 }
 
 func (e *Executor) startTask() {
-	for i := 0; i < config.Conf.InsertWorkerPreDBGroup; i++ {
+	for i := 0; i < config.Conf.StoreWorker; i++ {
 		poolErr := pool.GoroutinePool.Submit(
 			func() {
 				for {
@@ -65,126 +60,43 @@ func (e *Executor) startTask() {
 	}
 }
 
-func (e *Executor) InsertData(points []*model.MetricPoint) {
-	e.insertChan <- points
-}
-
 func (e *Executor) doInsertData(points []*model.MetricPoint) {
 	if len(points) == 0 {
 		return
 	}
-	stableName := Escape(points[0].Metric, MaxTableLen)
 	sqlList := make([]string, 0, len(points))
 	for _, point := range points {
-		escapeTagMap := make(map[string]struct{}, len(point.TagsList))
-
-		tags := make([]string, 0, 1+len(point.TagsList))
-		tags = append(tags, EndpointTagKey)
-		tagValues := make([]string, 0, 1+len(point.TagsList))
-		tagValues = append(tagValues, util.EscapeString(point.Ident))
-		for _, s := range point.TagsList {
-			escapeTag := Escape(s, MaxColLen)
-			_, exist := escapeTagMap[escapeTag]
-			if exist {
-				//todo escape之后可能存在重复tag 先不处理直接过滤掉
-				continue
-			} else {
-				escapeTagMap[escapeTag] = struct{}{}
-				tags = append(tags, escapeTag)
-			}
-			tagValues = append(tagValues, util.EscapeString(point.TagsMap[s]))
+		tableName := getTableName(point)
+		tags, err := json.Marshal(point.TagsMap)
+		if err != nil {
+			log.Logger.WithError(err).Error("json marshal")
+			continue
 		}
-		sqlList = append(sqlList, e.generateInsertSql(point.TableName, stableName, tags, tagValues, point.Time, point.Value))
+		sqlList = append(sqlList, e.generateInsertSql(tableName, TableName, string(tags), point.Time, point.Value))
 	}
 	b := pool.BytesPoolGet()
-	b.WriteString("insert into ")
+	b.WriteString("insert into")
 	for _, s := range sqlList {
+		b.WriteByte(' ')
 		b.WriteString(s)
 	}
 	sql := b.String()
 	pool.BytesPoolPut(b)
 	err := e.doExec(sql)
 	if err != nil {
-		var tdErr *common.TDengineError
-		if errors.As(err, &tdErr) {
-			tagMap := map[string]struct{}{}
-			for _, point := range points {
-				for _, s := range point.TagsList {
-					tagMap[Escape(s, MaxColLen)] = struct{}{}
-				}
-			}
-			switch int32(tdErr.Code) {
-			case tdengineErrors.MND_INVALID_TABLE_NAME:
-				//超级表不存在
-				//创建超级表
-				tagList := make([]string, 0, len(tagMap))
-				for s := range tagMap {
-					tagList = append(tagList, s)
-				}
-				err = e.createStable(stableName, tagList)
-				if err != nil {
-					return
-				}
-				err = e.modifyTag(stableName, tagMap)
-				if err != nil {
-					return
-				}
-			case tdengineErrors.TSC_INVALID_OPERATION:
-				//tag 不存在
-				err = e.modifyTag(stableName, tagMap)
-				if err != nil {
-					return
-				}
-			default:
-				log.Logger.WithError(tdErr).WithField("sql", sql).Error("insert sql error")
-				return
-			}
-		} else {
-			log.Logger.WithError(err).WithField("sql", sql).Error("insert sql error")
-			return
-		}
-		err = e.doExec(sql)
-		if err != nil {
-			log.Logger.WithError(err).WithField("sql", sql).Error("reinsert sql error")
-			return
-		}
+		log.Logger.WithError(err).Error("insert data")
 	}
 }
 
-func (e *Executor) modifyTag(stableName string, tagMap map[string]struct{}) error {
-	tableInfo, err := e.executor.DescribeTable(e.ctx, stableName)
-	if err != nil {
-		log.Logger.WithError(err).Errorf("describe stable %s error", stableName)
-		return err
+func getTableName(point *model.MetricPoint) string {
+	b := pool.BytesPoolGet()
+	tags := make([]string, len(point.TagsMap))
+	for k, v := range point.TagsMap {
+		tags = append(tags, fmt.Sprintf("%s=%s", k, v))
 	}
-	for _, tag := range tableInfo.Tags {
-		delete(tagMap, tag.Name)
-	}
-	if len(tagMap) > 0 {
-		for tag := range tagMap {
-			err := e.executor.AddTag(e.ctx, stableName, &tdengineExecutor.FieldInfo{
-				Name:   tag,
-				Type:   common.BINARYType,
-				Length: config.Conf.MaxTagLength,
-			})
-			if err != nil {
-				var addTagErr *common.TDengineError
-				if errors.As(err, &addTagErr) {
-					if addTagErr.Code == int(tdengineErrors.TSC_INVALID_OPERATION) {
-						//字段错误说明已存在
-						continue
-					} else {
-						log.Logger.WithError(addTagErr).Errorf("stable %s add tag %s error", stableName, tag)
-						return addTagErr
-					}
-				} else {
-					log.Logger.WithError(err).Errorf("stable %s add tag %s error", stableName, tag)
-					return err
-				}
-			}
-		}
-	}
-	return nil
+	sort.Strings(tags)
+	b.WriteString(strings.Join(tags, "/"))
+	return fmt.Sprintf("md5_%x", md5.Sum(b.Bytes()))
 }
 
 func (e *Executor) doExec(sql string) error {
@@ -192,50 +104,27 @@ func (e *Executor) doExec(sql string) error {
 	return err
 }
 
-func (e *Executor) createStable(stableName string, tagList []string) error {
-	tags := make([]*tdengineExecutor.FieldInfo, 0, 1+len(tagList))
-	tags = append(tags, tagScheme...)
-	for _, s := range tagList {
-		tags = append(tags, &tdengineExecutor.FieldInfo{
-			Name:   s,
-			Type:   common.BINARYType,
-			Length: config.Conf.MaxTagLength,
-		})
-	}
-	err := e.executor.CreateSTable(e.ctx, stableName, &tdengineExecutor.TableInfo{
+func (e *Executor) createStable() error {
+	err := e.executor.CreateSTable(e.ctx, TableName, &tdengineExecutor.TableInfo{
 		Fields: valueField,
-		Tags:   tags,
+		Tags:   tagField,
 	})
 	if err != nil {
 		//返回错误
-		var tdErr *common.TDengineError
-		if errors.As(err, &tdErr) {
-			switch int32(tdErr.Code) {
-			case tdengineErrors.MND_TABLE_ALREADY_EXIST:
-				//表已经创建,返回正常
-			default:
-				log.Logger.WithError(tdErr).Error("create stable error")
-				return tdErr
-			}
-		} else {
-			log.Logger.WithError(err).Error("create stable error")
-			return err
-		}
+		log.Logger.WithError(err).Error("create stable error")
+		return err
 	}
 	return nil
 }
 
-func (e *Executor) generateInsertSql(tableName string, stableName string, tagFields []string, tagValues []string, ts time.Time, value float64) string {
+func (e *Executor) generateInsertSql(tableName string, stableName string, tagValues string, ts time.Time, value float64) string {
 	//insert into table using stable () tags() values()
 	b := pool.BytesPoolGet()
 	b.WriteString(e.executor.WithDBName(tableName))
 	b.WriteString(" using ")
 	b.WriteString(e.executor.WithDBName(stableName))
-	b.WriteString(" (")
-	b.WriteString(strings.Join(tagFields, ","))
-	b.WriteString(")")
 	b.WriteString(" tags ('")
-	b.WriteString(strings.Join(tagValues, "','"))
+	b.WriteString(tagValues)
 	b.WriteString("') values ('")
 	b.WriteString(formatTime(ts))
 	b.WriteString("',")
@@ -276,54 +165,78 @@ func (e *Executor) setPrecision() {
 	e.executor.SetTimeLayout(layout)
 }
 
-func Escape(s string, maxLen int) string {
-	if len(s) == 0 {
-		return ""
-	}
+func Query(query *prompb.Query) (*connector.Data, error) {
 	b := pool.BytesPoolGet()
-	defer pool.BytesPoolPut(b)
-	b.WriteByte('_')
-	stableNameLen := maxLen - 1
-	if len(s) < maxLen-1 {
-		stableNameLen = len(s)
-	}
-	b.Grow(stableNameLen)
-	for i := 0; i < stableNameLen; i++ {
-		c := s[i]
-		if (c <= 'Z' && c >= 'A') || (c <= 'z' && c >= 'a') || (c <= '9' && c >= '0') || c == '_' {
-			b.WriteByte(c)
-		} else {
-			b.WriteByte('_')
+	b.WriteString("select * from ")
+	b.WriteString(e.executor.WithDBName(TableName))
+	b.WriteString(" where ts >= '")
+	b.WriteString(ms2Time(query.StartTimestampMs))
+	b.WriteString("' and ts <= '")
+	b.WriteString(ms2Time(query.EndTimestampMs))
+	b.WriteByte('\'')
+	for _, matcher := range query.Matchers {
+		b.WriteString(" and ")
+		column := matcher.Name
+		switch matcher.Type {
+		case prompb.LabelMatcher_EQ:
+			b.WriteString("labels->'")
+			b.WriteString(column)
+			b.WriteString("'='")
+			b.WriteString(matcher.Value)
+			b.WriteByte('\'')
+		case prompb.LabelMatcher_NEQ:
+			b.WriteString("labels->'")
+			b.WriteString(column)
+			b.WriteString("'!='")
+			b.WriteString(matcher.Value)
+			b.WriteByte('\'')
+		case prompb.LabelMatcher_RE:
+			b.WriteString("labels->'")
+			b.WriteString(column)
+			b.WriteString("'match'")
+			b.WriteString(matcher.Value)
+			b.WriteByte('\'')
+		case prompb.LabelMatcher_NRE:
+			b.WriteString("labels->'")
+			b.WriteString(column)
+			b.WriteString("'nmatch'")
+			b.WriteString(matcher.Value)
+			b.WriteByte('\'')
+		default:
+			return nil, errors.New("not support match type")
 		}
 	}
-	return b.String()
+	b.WriteString(" order by ts desc")
+	sql := b.String()
+	pool.BytesPoolPut(b)
+	return e.executor.DoQuery(e.ctx, sql)
 }
-
-func Unescape(s string) string {
-	if len(s) == 0 {
-		return ""
+func ms2Time(ts int64) string {
+	return time.Unix(0, ts*1e6).Local().Format(time.RFC3339Nano)
+}
+func InsertData(points []*model.MetricPoint) {
+	if len(points) == 0 {
+		return
 	}
-	return s[1:]
+	e.insertChan <- points
 }
-
 func init() {
-	ExecutorGroup = make([]*Executor, len(config.TDengineConfig))
-	for i, c := range config.TDengineConfig {
-		tdengineConnector, err := connector.NewTDengineConnector(config.Conf.TDengineConnType, c)
-		if err != nil {
-			log.Logger.WithError(err).Panic("create TDengine connector error")
-		}
-		executor := tdengineExecutor.NewExecutor(tdengineConnector, config.Conf.DBName, config.Conf.ShowSQL, log.Logger)
-
-		e := &Executor{
-			executor:   executor,
-			index:      i,
-			insertChan: make(chan []*model.MetricPoint, config.Conf.InsertWorkerPreDBGroup*2),
-			ctx:        context.Background(),
-		}
-		e.createDB()
-		e.setPrecision()
-		e.startTask()
-		ExecutorGroup[i] = e
+	tdengineConnector, err := connector.NewTDengineConnector(config.Conf.TDengineConnType, config.TDengineConfig)
+	if err != nil {
+		log.Logger.WithError(err).Panic("create TDengine connector error")
 	}
+	executor := tdengineExecutor.NewExecutor(tdengineConnector, config.Conf.DBName, config.Conf.ShowSQL, log.Logger)
+
+	e = &Executor{
+		executor:   executor,
+		insertChan: make(chan []*model.MetricPoint, config.Conf.StoreWorker*2),
+		ctx:        context.Background(),
+	}
+	e.createDB()
+	e.setPrecision()
+	err = e.createStable()
+	if err != nil {
+		panic(err)
+	}
+	e.startTask()
 }

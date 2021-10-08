@@ -9,29 +9,29 @@ import (
 	"net/http"
 )
 
-type Collector struct {
+type Controller struct {
 	web.BaseController
 }
 
-func (ctl *Collector) Init(router gin.IRouter) {
+func (ctl *Controller) Init(router gin.IRouter) {
 	api := router.Group("write")
 	api.POST("", ctl.write)
 }
 
-func (ctl *Collector) write(c *gin.Context) {
+func (ctl *Controller) write(c *gin.Context) {
 	c.Status(http.StatusAccepted)
-	data,err := c.GetRawData()
+	data, err := c.GetRawData()
 	if err != nil {
 		_ = c.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	buf,err := snappy.Decode(nil,data)
+	buf, err := snappy.Decode(nil, data)
 	if err != nil {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
 	var req prompb.WriteRequest
-	err = proto.Unmarshal(buf,&req)
+	err = proto.Unmarshal(buf, &req)
 	if err != nil {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
@@ -39,7 +39,7 @@ func (ctl *Collector) write(c *gin.Context) {
 	_ = processReq(&req)
 }
 func init() {
-	collector := &Collector{
+	collector := &Controller{
 		BaseController: web.BaseController{},
 	}
 	web.AddController(collector)

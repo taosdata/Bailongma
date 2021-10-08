@@ -6,12 +6,6 @@ Port = 9090
 DBName = "n9e"
 #tdengine连接方式 restful go
 TDengineConnType = "go"
-#最长 endpoint 长度
-MaxEndpointLength = 256
-#最长标签值长度
-MaxTagLength = 256
-#最长指标长度
-MaxMetricLength = 256
 #数据保存天数
 DataKeep = 3650
 #历史数据插入策略
@@ -24,10 +18,10 @@ EnableGzip = false
 LogLevel = "info"
 #goroutinue 池大小
 GoPoolSize = 50000
-#每个db连接的worker
-InsertWorkerPreDBGroup = 100
+#insert的worker
+StoreWorker = 100
 
-[[TDengineGoGroup]]
+[[TDengineGo]]
 #地址
 Address = "root:taosdata@/tcp(127.0.0.1:6030)/"
 #最大空闲连接
@@ -36,25 +30,8 @@ MaxIdle = 20
 MaxOpen = 200
 #连接最长生命周期（秒）
 MaxLifetime = 30
-#指标分组 以 '_' 分割, '?' 代表一个字符串 '*' 代表0个或多个字符串
-#"A_?" 可以匹配 "A_A" "A_B" "A_C" 不可以匹配 "A" "A_B_C"
-#"A_*" 可以匹配 "A_A" "A_B" "A_C" "A" "A_B_C"
-#'?' 匹配优先级大于 '*'
-#所有分组汇总后一定要存在一个 '*' 作为未匹配到的默认项
-Metrics = ['*']
 
-#[[TDengineGoGroup]]
-##地址
-#Address = "root:taosdata@/tcp(node159:6030)/"
-##最大空闲连接
-#MaxIdle = 20
-##最大连接数
-#MaxOpen = 200
-##连接最长生命周期（秒）
-#MaxLifetime = 30
-#metrics = ['cpu_*']
-#
-#[[TDengineRestfulGroup]]
+#[[TDengineRestful]]
 ##连接地址
 #Address = "http://127.0.0.1:6041"
 ##验证方式 Basic Taosd
@@ -65,17 +42,3 @@ Metrics = ['*']
 #Password = "taosdata"
 ##每个host最大连接数 -1代表无限制
 #MaxConnsPerHost = 10
-#Metrics = ['*']
-#
-#[[TDengineRestfulGroup]]
-##连接地址
-#Address = "http://192.168.1.159:6041"
-##验证方式 Basic Taosd
-#AuthType = "Basic"
-##用户名
-#Username = "root"
-##密码
-#Password = "taosdata"
-##每个host最大连接数 -1代表无限制
-#MaxConnsPerHost = 10
-#metrics = ['cpu_*']
