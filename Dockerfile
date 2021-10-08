@@ -26,10 +26,6 @@ COPY blm_prometheus /root/blm_prometheus/
 
 #RUN mkdir /usr/lib/ld
 
-WORKDIR /root/
-RUN go mod init bailongma/v2 && \
-    go mod tidy
-
 WORKDIR /root/blm_telegraf/
 RUN go build 
 

@@ -67,7 +67,6 @@ jobs:
         sudo make install
         cd ../../
         cd blm_telegraf
-        go mod init blm_telegraf
         go mod tidy
         go build
         cd ..
