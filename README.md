@@ -1,5 +1,7 @@
 # 通过Bailongma API服务程序接入Prometheus和Telegraf
 
+**注意：Bailongma项目功能已经被 [taosAdapter](https://github.com/taosdata/taosadapter) 项目功能完全实现并取代。
+
 TDengine在原生连接器通过TAOS SQL写入数据之外，还支持通过API服务程序来接入Prometheus和Telegraf的数据，仅需在Prometheus和Telegraf添加相关配置，即可将数据直接写入TDengine中，并按规则自动创建库和相关表项，无需任何代码，以及提前在TDengine做任何配置。
 这篇博文[用Docker容器快速搭建一个Devops监控Demo](https://www.taosdata.com/blog/2020/02/03/1189.html)即是采用bailongma将Prometheus和Telegraf的数据写入TDengine中的示例，可以参考。
 
